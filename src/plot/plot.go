@@ -6,6 +6,7 @@ x2 y2
 xn yn
 
 Use CSS display grid to display a 100x100 grid of cells.
+Use CSS flexbox to display the labels on the x and y axes.
 */
 
 package main
@@ -14,11 +15,15 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"math"
+	"math/rand"
 	"net/http"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"text/template"
+	"time"
 )
 
 const (
@@ -28,7 +33,8 @@ const (
 	addr             = "127.0.0.1:8080"                         // http server listen address
 	pattern          = "/plotdata"                              // http handler pattern for plotting data
 	patternGenerator = "/generatedata"                          // http handler pattern for data generation
-	xlabels          = 10                                       // # labels on x axis
+	xlabels          = 9                                        // # labels on x axis
+	dataDir          = "data/"
 )
 
 type PlotT struct {
@@ -72,6 +78,10 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 			// Mark the data x-y coordinate online at the corresponding
 			// grid row/column.
 			input := bufio.NewScanner(f)
+			xmax = -math.MaxFloat64
+			xmin = math.MaxFloat64
+			ymax = -math.MaxFloat64
+			ymin = math.MaxFloat64
 
 			for input.Scan() {
 				line := input.Text()
@@ -90,24 +100,27 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 
 				if x > xmax {
 					xmax = x
-				} else if x < xmin {
+				}
+				if x < xmin {
 					xmin = x
 				}
 
 				if y > ymax {
 					ymax = y
-				} else if y < ymin {
+				}
+				if y < ymin {
 					ymin = y
 				}
 			}
 			f.Close()
 			f, err = os.Open(filename)
 			if err == nil {
+				defer f.Close()
 				input := bufio.NewScanner(f)
 
 				// Calculate scale factors for x and y
-				xscale = columns / (xmax - xmin)
-				yscale = rows / (ymax - ymin)
+				xscale = (columns - 1) / (xmax - xmin)
+				yscale = (rows - 1) / (ymax - ymin)
 
 				for input.Scan() {
 					line := input.Text()
@@ -125,10 +138,9 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 					}
 
 					// This cell location (row,col) is on the line
-					row := int(rows - (y-ymin)*yscale + .5)
+					row := (rows - 1) - int((y-ymin)*yscale+.5)
 					col := int((x-xmin)*xscale + .5)
-					plot.Grid[row*rows+col] = "online"
-
+					plot.Grid[row*columns+col] = "online"
 				}
 			} else {
 				// Set plot status
@@ -153,8 +165,8 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 	plot.Ymin = fmt.Sprintf("%.2f", ymin)
 
 	// Construct x-axis labels
-	incr := (xmax - xmin) / (xlabels - 1)
-	x := xmin
+	incr := (xmax - xmin) / (xlabels + 1)
+	x := xmin + incr
 	for i := range plot.Xlabel {
 		plot.Xlabel[i] = fmt.Sprintf("%.2f", x)
 		x += incr
@@ -165,11 +177,87 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 
 		log.Fatalf("Write to HTTP output using template with grid error: %v\n", err)
 	}
-
 }
 
 // handleGenerating creates x-y data and saves to disk files
 func handleGenerating(w http.ResponseWriter, r *http.Request) {
+	const (
+		samples         = 400
+		cycles          = 4
+		k       float64 = 2.0 * math.Pi / (samples / cycles)
+	)
+
+	// 1. sine wave
+	f, err := os.Create(path.Join(dataDir, "sin.txt"))
+	if err != nil {
+		log.Fatalf("Create %v error: %v", path.Join(dataDir, "sin.txt"), err)
+	}
+
+	for i := 0; i < samples; i++ {
+		fmt.Fprintf(f, "%v %v\n", i, math.Sin(k*float64(i)))
+	}
+	fmt.Fprintf(w, "Wrote %v samples to %v\n", samples, path.Join(dataDir, "sin.txt"))
+	f.Close()
+
+	// 2. circle
+	f, err = os.Create(path.Join(dataDir, "circle.txt"))
+	if err != nil {
+		log.Fatalf("Create %v error: %v", path.Join(dataDir, "circle.txt"), err)
+	}
+	// radius
+	rad := 8.0
+	incr := 2.0 * rad / samples
+	x := -rad
+	var y float64
+	for i := 0; i < samples; i++ {
+		y = math.Sqrt(rad*rad - x*x)
+		fmt.Fprintf(f, "%v %v\n", x, y)
+		fmt.Fprintf(f, "%v %v\n", x, -y)
+		x += incr
+	}
+	fmt.Fprintf(w, "Wrote %v samples to %v\n", samples, path.Join(dataDir, "circle.txt"))
+	f.Close()
+
+	// 3. decaying sawtooth
+	f, err = os.Create(path.Join(dataDir, "sawtooth.txt"))
+	if err != nil {
+		log.Fatalf("Create %v error: %v", path.Join(dataDir, "sawtooth.txt"), err)
+	}
+	y = 100.0
+	x = 25.0
+	xincr := 1.5
+	yincr := 3.0 * xincr
+	for c := 0; c < cycles; c++ {
+		samplesPerCycle := samples / cycles
+		for n := 0; n < samplesPerCycle; n++ {
+			fmt.Fprintf(f, "%v %v\n", x, y)
+			// reverse y direction
+			if n == samplesPerCycle/2 {
+				yincr = -yincr
+			}
+			x += xincr
+			y += yincr
+		}
+		// decay and reverse direction
+		yincr *= -.8
+	}
+	fmt.Fprintf(w, "Wrote %v samples to %v\n", samples, path.Join(dataDir, "sawtooth.txt"))
+	f.Close()
+
+	// 4. Random data
+	f, err = os.Create(path.Join(dataDir, "random.txt"))
+	if err != nil {
+		log.Fatalf("Create %v error: %v", path.Join(dataDir, "random.txt"), err)
+	}
+	rand.Seed(time.Now().Unix())
+	m := 1000.0
+	for i := 0; i < samples; i++ {
+		x := m * rand.Float64()
+		y := m * rand.Float64()
+		fmt.Fprintf(f, "%v %v\n", x, y)
+	}
+	fmt.Fprintf(w, "Wrote %v samples to %v\n", samples, path.Join(dataDir, "random.txt"))
+	f.Close()
 
 }
 
