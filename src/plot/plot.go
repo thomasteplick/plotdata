@@ -5,6 +5,7 @@ x2 y2
 ...
 xn yn
 
+The html/template package is used to generate the html sent to the client.
 Use CSS display grid to display a 100x100 grid of cells.
 Use CSS flexbox to display the labels on the x and y axes.
 */
@@ -33,16 +34,16 @@ const (
 	addr             = "127.0.0.1:8080"                         // http server listen address
 	pattern          = "/plotdata"                              // http handler pattern for plotting data
 	patternGenerator = "/generatedata"                          // http handler pattern for data generation
-	xlabels          = 9                                        // # labels on x axis
-	dataDir          = "data/"
+	xlabels          = 11                                       // # labels on x axis
+	ylabels          = 11                                       // # labels on y axis
+	dataDir          = "data/"                                  // directory for the data files
 )
 
 type PlotT struct {
 	Grid   []string // plotting grid
 	Status string   // status of the plot
-	Ymax   string
-	Ymin   string
-	Xlabel []string
+	Xlabel []string // x-axis labels
+	Ylabel []string // y-axis labels
 }
 
 var (
@@ -69,6 +70,7 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 
 	plot.Grid = make([]string, rows*columns)
 	plot.Xlabel = make([]string, xlabels)
+	plot.Ylabel = make([]string, ylabels)
 
 	filename := r.FormValue("filename")
 	if len(filename) > 0 {
@@ -160,21 +162,25 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 		plot.Status = "Status: Provide a data file to plot."
 	}
 
-	// Assign Ymax and Ymin
-	plot.Ymax = fmt.Sprintf("%.2f", ymax)
-	plot.Ymin = fmt.Sprintf("%.2f", ymin)
-
 	// Construct x-axis labels
-	incr := (xmax - xmin) / (xlabels + 1)
-	x := xmin + incr
+	incr := (xmax - xmin) / (xlabels - 1)
+	x := xmin
+	// First label is empty for alignment purposes
 	for i := range plot.Xlabel {
 		plot.Xlabel[i] = fmt.Sprintf("%.2f", x)
 		x += incr
 	}
 
-	// Write to HTTP output using template and grid
-	if err := t.Execute(w, plot); err != nil {
+	// Construct the y-axis labels
+	incr = (ymax - ymin) / (ylabels - 1)
+	y := ymin
+	for i := range plot.Ylabel {
+		plot.Ylabel[i] = fmt.Sprintf("%.2f", y)
+		y += incr
+	}
 
+	// Write to HTTP using template and grid
+	if err := t.Execute(w, plot); err != nil {
 		log.Fatalf("Write to HTTP output using template with grid error: %v\n", err)
 	}
 }

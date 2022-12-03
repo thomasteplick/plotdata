@@ -42,16 +42,27 @@
 			}
 
 			div.grid > div.online {
-				background-color: black;
-				color: black;
+				background-color: gray;
+				color: gray;
 			}
 
-			div.xlabel-container {
+			#outer-container {
 				display: flex;
 				flex-direction: row;
-				width: 500px;
-				flex: 0 0 50px;
-				justify-content:space-evenly;
+			}
+
+			#xlabel-container {
+				display: flex;
+				flex-direction: row;
+				width: 550px;
+				justify-content: space-between;
+			}
+
+			#ylabel-container {
+				display: flex;
+				flex-direction: column-reverse;
+				width:40px;
+				justify-content: space-between;
 			}
 
 			div.xlabel, div.ylabel {
@@ -60,24 +71,40 @@
 			}
 
 			div.ylabel {
-				text-align: left;
+				text-align: right;
+				flex: 1 1 50px;
+				margin-right: 5px;
+			}
+
+			div.ylabel:first-child {
+				flex: 1 1 auto;
+			}
+
+			div.xlabel {
+				text-align: end;
+				flex: 0 0 50px;
 			}
 
 			form {
-				width: 500px;
+				width: 550px;
 			}
 
 		</style>
 	</head>
 	<body>
-		<div class="ylabel">{{.Ymax}}</div>
-		<div class="grid">
-			{{range .Grid}}
-				<div class="{{.}}">.</div>
-			{{end}}
+		<div id="outer-container">
+			<div id="ylabel-container">
+				{{range .Ylabel}}
+					<div class="ylabel">{{.}}</div>
+				{{end}}
+			</div>
+			<div class="grid">
+				{{range .Grid}}
+					<div class="{{.}}">.</div>
+				{{end}}
+			</div>
 		</div>
-		<div class="ylabel">{{.Ymin}}</div>
-		<div class="xlabel-container">
+		<div id="xlabel-container">
 			{{range .Xlabel}}
 				<div class="xlabel">{{.}}</div>
 			{{end}}
