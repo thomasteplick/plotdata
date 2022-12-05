@@ -5,32 +5,78 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<style type="text/css">
+
+			.options label {
+				font-size: 12px;
+				font-family: Arial, Helvetica, sans-serif;
+				width: 80px;
+				float: left;
+				text-align: right;
+				padding-right: 10px;
+			}
+
+			#outer-container {
+				display: flex;
+				flex-direction: row;
+			}
+
+			#gridxlabel {
+				width: 615px;
+			}		
+
+			#xlabel-container {
+				display: flex;
+				flex-direction: row;
+				width: 600px;
+				justify-content: space-between;
+			}
+
+			#ylabel-container {
+				display: flex;
+				flex-direction: column-reverse;
+				width:40px;
+				justify-content: start;
+			}
+
+			div.xlabel, div.ylabel {
+				font-size: 10px;
+				font-family: Arial, Helvetica, sans-serif;
+			}
+
+			div.ylabel {
+				text-align: right;
+				flex: 0 0 60px;
+			}
+
+			div.ylabel:first-child {
+				flex: 0 0 10px;
+			}
+
+			div.xlabel {
+				text-align: left;
+				flex: 0 0 60px;
+			}
+
 			div.grid {
 				display: grid;
-				grid-template-columns: repeat(100, 5px);
-				grid-template-rows: repeat(100, 5px);
-				width: 500px;
-				height: 500px;
+				grid-template-columns: repeat(200, 3px);
+				grid-template-rows: repeat(200, 3px);
+				width: 600px;
+				height: 600px;
 				border: 2px solid black;
+				margin-left: 10px;
 			}
 			
-			.grid div:nth-child(1001), .grid div:nth-child(2001), .grid div:nth-child(3001), .grid div:nth-child(4001), .grid div:nth-child(5001), .grid div:nth-child(6001),
-			.grid div:nth-child(7001), .grid div:nth-child(8001), .grid div:nth-child(9001) {
+			/*  y-axis ticks */
+			.grid div:nth-child(4001), .grid div:nth-child(8001), .grid div:nth-child(12001), .grid div:nth-child(16001), .grid div:nth-child(20001), .grid div:nth-child(24001),
+			.grid div:nth-child(28001), .grid div:nth-child(32001), .grid div:nth-child(36001) {
 			border-bottom: 2px solid black;
 			}
 
-			.grid div:nth-child(9910), .grid div:nth-child(9920), .grid div:nth-child(9930), .grid div:nth-child(9940), .grid div:nth-child(9950), .grid div:nth-child(9960),
-			.grid div:nth-child(9970), .grid div:nth-child(9980), .grid div:nth-child(9990) {
+			/* x-axis ticks */
+			.grid div:nth-child(39820), .grid div:nth-child(39840), .grid div:nth-child(39860), .grid div:nth-child(39880), .grid div:nth-child(39900), .grid div:nth-child(39920),
+			.grid div:nth-child(39940), .grid div:nth-child(39960), .grid div:nth-child(39980) {
 			border-left: 2px solid black;
-			}
-
-			.options input {
-				display: inline;
-			}
-
-			label {
-				font-size: 12px;
-				font-family: Arial, Helvetica, sans-serif;
 			}
 
 			div.grid > div {
@@ -46,49 +92,10 @@
 				color: gray;
 			}
 
-			#outer-container {
-				display: flex;
-				flex-direction: row;
+			#form {
+				width: 200px;
+				margin-left: 10px;
 			}
-
-			#xlabel-container {
-				display: flex;
-				flex-direction: row;
-				width: 550px;
-				justify-content: space-between;
-			}
-
-			#ylabel-container {
-				display: flex;
-				flex-direction: column-reverse;
-				width:40px;
-				justify-content: space-between;
-			}
-
-			div.xlabel, div.ylabel {
-				font-size: 10px;
-				font-family: Arial, Helvetica, sans-serif;
-			}
-
-			div.ylabel {
-				text-align: right;
-				flex: 1 1 50px;
-				margin-right: 5px;
-			}
-
-			div.ylabel:first-child {
-				flex: 1 1 auto;
-			}
-
-			div.xlabel {
-				text-align: end;
-				flex: 0 0 50px;
-			}
-
-			form {
-				width: 550px;
-			}
-
 		</style>
 	</head>
 	<body>
@@ -98,27 +105,38 @@
 					<div class="ylabel">{{.}}</div>
 				{{end}}
 			</div>
-			<div class="grid">
-				{{range .Grid}}
-					<div class="{{.}}">.</div>
-				{{end}}
+			<div id="gridxlabel">
+				<div class="grid">
+					{{range .Grid}}
+						<div class="{{.}}"></div>
+					{{end}}
+				</div>
+				<div id="xlabel-container">
+					{{range .Xlabel}}
+						<div class="xlabel">{{.}}</div>
+					{{end}}
+				</div>
+			</div>
+			<div id="form">
+				<form action="http://127.0.0.1:8080/plotdata" method="post">
+					<fieldset>
+						<legend>Plot Data Options</legend>
+						<div class="options">
+							<label for="filename">Filename:</label>
+							<input type="text" id="filename" name="filename" />
+							<br />
+							<label for="zoomstart">Zoom x Start:</label>
+							<input type="text" id="zoomstart" name="zoomstart" />
+							<br />
+							<label for="zoomend">Zoom x End:</label>
+							<input type="text" id="zoomend" name="zoomend"
+							<br />
+						</div>
+						<input type="submit" value="Submit" />
+						<input type="text" size="50" name="status" value="{{.Status}}" readonly />
+					</fieldset>
+				</form>
 			</div>
 		</div>
-		<div id="xlabel-container">
-			{{range .Xlabel}}
-				<div class="xlabel">{{.}}</div>
-			{{end}}
-		</div>
-		<form action="http://127.0.0.1:8080/plotdata" method="post">
-			<fieldset>
-				<legend>Plot Data</legend>
-				<div class="options">
-					<label for="filename">Filename</label>
-					<input type="text" id="filename" name="filename" />
-				</div>
-				<input type="submit" value="Submit" />
-				<input type="text" size="30" name="status" value="{{.Status}}" readonly />
-			</fieldset>
-		</form>
 	</body>
 </html>

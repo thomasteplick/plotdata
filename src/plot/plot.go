@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	rows             = 100                                      // #rows in grid
-	columns          = 100                                      // #columns in grid
+	rows             = 200                                      // #rows in grid
+	columns          = 200                                      // #columns in grid
 	tmpl             = "../../src/plot/templates/plotdata.html" // html template relative address
 	addr             = "127.0.0.1:8080"                         // http server listen address
 	pattern          = "/plotdata"                              // http handler pattern for plotting data
@@ -188,7 +188,7 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 // handleGenerating creates x-y data and saves to disk files
 func handleGenerating(w http.ResponseWriter, r *http.Request) {
 	const (
-		samples         = 400
+		samples         = 800
 		cycles          = 4
 		k       float64 = 2.0 * math.Pi / (samples / cycles)
 	)
