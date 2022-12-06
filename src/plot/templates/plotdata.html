@@ -9,8 +9,7 @@
 			.options label {
 				font-size: 12px;
 				font-family: Arial, Helvetica, sans-serif;
-				width: 80px;
-				float: left;
+				width: 20px;
 				text-align: right;
 				padding-right: 10px;
 			}
@@ -93,8 +92,11 @@
 			}
 
 			#form {
-				width: 200px;
 				margin-left: 10px;
+			}
+
+			#filename {
+				margin-left: 20px;
 			}
 		</style>
 	</head>
@@ -125,11 +127,15 @@
 							<label for="filename">Filename:</label>
 							<input type="text" id="filename" name="filename" />
 							<br />
-							<label for="zoomstart">Zoom x Start:</label>
-							<input type="text" id="zoomstart" name="zoomstart" />
+							<label for="zoomxstart">Zoom x Start:</label>
+							<input type="text" id="zoomsxtart" name="zoomxstart" />
+							<label for="zoomxend">x End:</label>
+							<input type="text" id="zoomxend" name="zoomxend" />
 							<br />
-							<label for="zoomend">Zoom x End:</label>
-							<input type="text" id="zoomend" name="zoomend"
+							<label for="zoomystart" >Zoom y Start:</label>
+							<input type="text" id="zoomystart" name="zoomystart" />
+							<label for="zoomend">y End:</label>
+							<input type="text" id="zoomyend" name="zoomyend" />
 							<br />
 						</div>
 						<input type="submit" value="Submit" />

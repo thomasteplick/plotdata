@@ -120,6 +120,39 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 				defer f.Close()
 				input := bufio.NewScanner(f)
 
+				// Determine if zoom requested and validate endpoints
+				zoomxstart := r.FormValue("zoomxstart")
+				zoomxend := r.FormValue("zoomxend")
+				zoomystart := r.FormValue("zoomystart")
+				zoomyend := r.FormValue("zoomyend")
+				if len(zoomxstart) > 0 && len(zoomxend) > 0 &&
+					len(zoomystart) > 0 && len(zoomyend) > 0 {
+					x1, err1 := strconv.ParseFloat(zoomxstart, 64)
+					x2, err2 := strconv.ParseFloat(zoomxend, 64)
+					y1, err3 := strconv.ParseFloat(zoomystart, 64)
+					y2, err4 := strconv.ParseFloat(zoomyend, 64)
+
+					if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+						plot.Status = "Zoom x or y values are not numbers."
+						fmt.Printf("Zoom error: x start error = %v, x end error = %v\n", err1, err2)
+						fmt.Printf("Zoom error: y start error = %v, y end error = %v\n", err3, err4)
+					} else {
+						if (x1 < xmin || x1 > xmax) || (x2 < xmin || x2 > xmax) || (x1 >= x2) {
+							plot.Status = "Zoom values are not in x range."
+							fmt.Printf("Zoom error: start or end value not in x range.\n")
+						} else if (y1 < ymin || y1 > ymax) || (y2 < ymin || y2 > ymax) || (y1 >= y2) {
+							plot.Status = "Zoom values are not in y range."
+							fmt.Printf("Zoom error: start or end value not in y range.\n")
+						} else {
+							// Valid Zoom endpoints, replace the previous min and max values
+							xmin = x1
+							xmax = x2
+							ymin = y1
+							ymax = y2
+						}
+					}
+				}
+
 				// Calculate scale factors for x and y
 				xscale = (columns - 1) / (xmax - xmin)
 				yscale = (rows - 1) / (ymax - ymin)
@@ -139,19 +172,26 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 
+					// Check if inside the zoom values
+					if x < xmin || x > xmax || y < ymin || y > ymax {
+						continue
+					}
+
 					// This cell location (row,col) is on the line
 					row := (rows - 1) - int((y-ymin)*yscale+.5)
 					col := int((x-xmin)*xscale + .5)
 					plot.Grid[row*columns+col] = "online"
 				}
+				// Set plot status if no errors
+				if len(plot.Status) == 0 {
+					plot.Status = fmt.Sprintf("Status: Data plotted from %s", filename)
+				}
+
 			} else {
 				// Set plot status
 				fmt.Printf("Error opening file %s: %v\n", filename, err)
 				plot.Status = "Status: Error opening file."
 			}
-
-			// Set plot status
-			plot.Status = fmt.Sprintf("Status: Data plotted from %s", filename)
 
 		} else {
 			// Set plot status
@@ -265,6 +305,42 @@ func handleGenerating(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Wrote %v samples to %v\n", samples, path.Join(dataDir, "random.txt"))
 	f.Close()
 
+	// 5. Spiral
+	f, err = os.Create(path.Join(dataDir, "spiral.txt"))
+	if err != nil {
+		log.Fatalf("Create %v error: %v", path.Join(dataDir, "spiral.txt"), err)
+	}
+
+	rad = 0.0
+	ang := 0.0
+	radIncr := .1
+	angIncr := 2.0 * math.Pi / (samples / 2.0)
+	for s := 0; s < cycles*samples; s++ {
+		x := rad * math.Cos(ang)
+		y := rad * math.Sin(ang)
+		fmt.Fprintf(f, "%v %v\n", x, y)
+		rad += radIncr
+		ang += angIncr
+	}
+	fmt.Fprintf(w, "Wrote %v samples to %v\n", cycles*samples, path.Join(dataDir, "spiral.txt"))
+	f.Close()
+
+	// 6. Cardoid r = K(1-cos(ang)), where K is a positive constant
+	f, err = os.Create(path.Join(dataDir, "cardoid.txt"))
+	if err != nil {
+		log.Fatalf("Create %v error: %v", path.Join(dataDir, "cardoid.txt"), err)
+	}
+
+	const K = 13.0
+	angIncr = 2.0 * math.Pi / samples
+	for ang := 0.0; ang < 2*math.Pi; ang += angIncr {
+		r := K * (1.0 - math.Cos(ang))
+		x := r * math.Cos(ang)
+		y := r * math.Sin(ang)
+		fmt.Fprintf(f, "%v %v\n", x, y)
+	}
+	fmt.Fprintf(w, "Wrote %v samples to %v\n", samples, path.Join(dataDir, "cardoid.txt"))
+	f.Close()
 }
 
 // executive program
