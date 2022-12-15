@@ -28,8 +28,8 @@ import (
 )
 
 const (
-	rows             = 200                                      // #rows in grid
-	columns          = 200                                      // #columns in grid
+	rows             = 300                                      // #rows in grid
+	columns          = 300                                      // #columns in grid
 	tmpl             = "../../src/plot/templates/plotdata.html" // html template relative address
 	addr             = "127.0.0.1:8080"                         // http server listen address
 	pattern          = "/plotdata"                              // http handler pattern for plotting data
@@ -65,7 +65,7 @@ func init() {
 	t = template.Must(template.ParseFiles(tmpl))
 }
 
-// findEndpointsRot finds the minimum and maximum data values
+// findEndpoints finds the minimum and maximum data values
 func (ep *Endpoints) findEndpoints(input *bufio.Scanner, rad float64) {
 	ep.xmax = -math.MaxFloat64
 	ep.xmin = math.MaxFloat64
