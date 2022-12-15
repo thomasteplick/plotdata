@@ -37,13 +37,23 @@ const (
 	xlabels          = 11                                       // # labels on x axis
 	ylabels          = 11                                       // # labels on y axis
 	dataDir          = "data/"                                  // directory for the data files
+	deg2rad          = math.Pi / 180.0                          // convert degrees to radians
 )
 
+// Type to contain all the HTML template actions
 type PlotT struct {
 	Grid   []string // plotting grid
 	Status string   // status of the plot
 	Xlabel []string // x-axis labels
 	Ylabel []string // y-axis labels
+}
+
+// Type to hold the minimum and maximum data values
+type Endpoints struct {
+	xmin float64
+	xmax float64
+	ymin float64
+	ymax float64
 }
 
 var (
@@ -55,17 +65,62 @@ func init() {
 	t = template.Must(template.ParseFiles(tmpl))
 }
 
+// findEndpointsRot finds the minimum and maximum data values
+func (ep *Endpoints) findEndpoints(input *bufio.Scanner, rad float64) {
+	ep.xmax = -math.MaxFloat64
+	ep.xmin = math.MaxFloat64
+	ep.ymax = -math.MaxFloat64
+	ep.ymin = math.MaxFloat64
+	for input.Scan() {
+		line := input.Text()
+		// Each line has 2 space-separated values: x y coordinates can be int or float
+		coord := strings.Split(line, " ")
+		var (
+			x, y float64
+			err  error
+		)
+		if x, err = strconv.ParseFloat(coord[0], 64); err != nil {
+			fmt.Printf("String %s conversion to float error: %v\n", coord[0], err)
+			continue
+		}
+
+		if y, err = strconv.ParseFloat(coord[1], 64); err != nil {
+			fmt.Printf("String %s conversion to float error: %v\n", coord[1], err)
+			continue
+		}
+
+		// rotation
+		if rad != 0.0 {
+			xrot := x*math.Cos(rad) + y*math.Sin(rad)
+			yrot := -x*math.Sin(rad) + y*math.Cos(rad)
+			x = xrot
+			y = yrot
+		}
+
+		if x > ep.xmax {
+			ep.xmax = x
+		}
+		if x < ep.xmin {
+			ep.xmin = x
+		}
+
+		if y > ep.ymax {
+			ep.ymax = y
+		}
+		if y < ep.ymin {
+			ep.ymin = y
+		}
+	}
+}
+
 // handlePlotting opens the file and plots the data
 func handlePlotting(w http.ResponseWriter, r *http.Request) {
 	// main data structure
 	var (
-		plot   PlotT
-		xmax   float64
-		xmin   float64
-		ymax   float64
-		ymin   float64
-		xscale float64
-		yscale float64
+		plot      PlotT
+		xscale    float64
+		yscale    float64
+		endpoints Endpoints
 	)
 
 	plot.Grid = make([]string, rows*columns)
@@ -80,40 +135,21 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 			// Mark the data x-y coordinate online at the corresponding
 			// grid row/column.
 			input := bufio.NewScanner(f)
-			xmax = -math.MaxFloat64
-			xmin = math.MaxFloat64
-			ymax = -math.MaxFloat64
-			ymin = math.MaxFloat64
 
-			for input.Scan() {
-				line := input.Text()
-				// Each line has 2 space-separated values: x y coordinates can be int or float
-				coord := strings.Split(line, " ")
-				var x, y float64
-				if x, err = strconv.ParseFloat(coord[0], 64); err != nil {
-					fmt.Printf("String %s conversion to float error: %v\n", coord[0], err)
-					continue
-				}
-
-				if y, err = strconv.ParseFloat(coord[1], 64); err != nil {
-					fmt.Printf("String %s conversion to float error: %v\n", coord[1], err)
-					continue
-				}
-
-				if x > xmax {
-					xmax = x
-				}
-				if x < xmin {
-					xmin = x
-				}
-
-				if y > ymax {
-					ymax = y
-				}
-				if y < ymin {
-					ymin = y
+			// Determine if rotate requested and perform the rotation of x and y
+			rotate := r.FormValue("rotate")
+			rad := 0.0
+			if len(rotate) > 0 {
+				deg, err := strconv.ParseFloat(rotate, 64)
+				if err != nil {
+					plot.Status = "Rotate degree conversion error"
+					fmt.Printf("Rotate degree %v conversion error: %v", rotate, err)
+				} else {
+					rad = deg2rad * deg
 				}
 			}
+			endpoints.findEndpoints(input, rad)
+
 			f.Close()
 			f, err = os.Open(filename)
 			if err == nil {
@@ -137,25 +173,27 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 						fmt.Printf("Zoom error: x start error = %v, x end error = %v\n", err1, err2)
 						fmt.Printf("Zoom error: y start error = %v, y end error = %v\n", err3, err4)
 					} else {
-						if (x1 < xmin || x1 > xmax) || (x2 < xmin || x2 > xmax) || (x1 >= x2) {
+						if (x1 < endpoints.xmin || x1 > endpoints.xmax) ||
+							(x2 < endpoints.xmin || x2 > endpoints.xmax) || (x1 >= x2) {
 							plot.Status = "Zoom values are not in x range."
 							fmt.Printf("Zoom error: start or end value not in x range.\n")
-						} else if (y1 < ymin || y1 > ymax) || (y2 < ymin || y2 > ymax) || (y1 >= y2) {
+						} else if (y1 < endpoints.ymin || y1 > endpoints.ymax) ||
+							(y2 < endpoints.ymin || y2 > endpoints.ymax) || (y1 >= y2) {
 							plot.Status = "Zoom values are not in y range."
 							fmt.Printf("Zoom error: start or end value not in y range.\n")
 						} else {
 							// Valid Zoom endpoints, replace the previous min and max values
-							xmin = x1
-							xmax = x2
-							ymin = y1
-							ymax = y2
+							endpoints.xmin = x1
+							endpoints.xmax = x2
+							endpoints.ymin = y1
+							endpoints.ymax = y2
 						}
 					}
 				}
 
 				// Calculate scale factors for x and y
-				xscale = (columns - 1) / (xmax - xmin)
-				yscale = (rows - 1) / (ymax - ymin)
+				xscale = (columns - 1) / (endpoints.xmax - endpoints.xmin)
+				yscale = (rows - 1) / (endpoints.ymax - endpoints.ymin)
 
 				for input.Scan() {
 					line := input.Text()
@@ -172,19 +210,28 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 						continue
 					}
 
+					// rotation
+					if rad != 0.0 {
+						xrot := x*math.Cos(rad) + y*math.Sin(rad)
+						yrot := -x*math.Sin(rad) + y*math.Cos(rad)
+						x = xrot
+						y = yrot
+					}
+
 					// Check if inside the zoom values
-					if x < xmin || x > xmax || y < ymin || y > ymax {
+					if x < endpoints.xmin || x > endpoints.xmax || y < endpoints.ymin || y > endpoints.ymax {
 						continue
 					}
 
 					// This cell location (row,col) is on the line
-					row := (rows - 1) - int((y-ymin)*yscale+.5)
-					col := int((x-xmin)*xscale + .5)
+					row := (rows - 1) - int((y-endpoints.ymin)*yscale+.5)
+					col := int((x-endpoints.xmin)*xscale + .5)
 					plot.Grid[row*columns+col] = "online"
 				}
 				// Set plot status if no errors
 				if len(plot.Status) == 0 {
-					plot.Status = fmt.Sprintf("Status: Data plotted from %s", filename)
+					plot.Status = fmt.Sprintf("Status: Data plotted from (%.3f,%.3f) to (%.3f,%.3f)",
+						endpoints.xmin, endpoints.ymin, endpoints.xmax, endpoints.ymax)
 				}
 
 			} else {
@@ -203,8 +250,8 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Construct x-axis labels
-	incr := (xmax - xmin) / (xlabels - 1)
-	x := xmin
+	incr := (endpoints.xmax - endpoints.xmin) / (xlabels - 1)
+	x := endpoints.xmin
 	// First label is empty for alignment purposes
 	for i := range plot.Xlabel {
 		plot.Xlabel[i] = fmt.Sprintf("%.2f", x)
@@ -212,8 +259,8 @@ func handlePlotting(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Construct the y-axis labels
-	incr = (ymax - ymin) / (ylabels - 1)
-	y := ymin
+	incr = (endpoints.ymax - endpoints.ymin) / (ylabels - 1)
+	y := endpoints.ymin
 	for i := range plot.Ylabel {
 		plot.Ylabel[i] = fmt.Sprintf("%.2f", y)
 		y += incr
@@ -230,7 +277,7 @@ func handleGenerating(w http.ResponseWriter, r *http.Request) {
 	const (
 		samples         = 800
 		cycles          = 4
-		k       float64 = 2.0 * math.Pi / (samples / cycles)
+		k       float64 = cycles * math.Pi
 	)
 
 	// 1. sine wave
@@ -239,8 +286,11 @@ func handleGenerating(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("Create %v error: %v", path.Join(dataDir, "sin.txt"), err)
 	}
 
-	for i := 0; i < samples; i++ {
-		fmt.Fprintf(f, "%v %v\n", i, math.Sin(k*float64(i)))
+	xstart := -1.0
+	xend := 1.0
+	xincr := (xend - xstart) / float64(samples)
+	for x := xstart; x < xend; x += xincr {
+		fmt.Fprintf(f, "%v %v\n", x, math.Sin(k*x))
 	}
 	fmt.Fprintf(w, "Wrote %v samples to %v\n", samples, path.Join(dataDir, "sin.txt"))
 	f.Close()
@@ -271,7 +321,7 @@ func handleGenerating(w http.ResponseWriter, r *http.Request) {
 	}
 	y = 100.0
 	x = 25.0
-	xincr := 1.5
+	xincr = 1.5
 	yincr := 3.0 * xincr
 	for c := 0; c < cycles; c++ {
 		samplesPerCycle := samples / cycles
