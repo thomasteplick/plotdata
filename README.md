@@ -8,3 +8,5 @@ The display is a 300 x 300 cell grid, each cell is 2px by 2px.  Therefore there 
 html/template package.
 
 Entering http://127.0.0.1:8080/generatedata in the web browser will generate the text data files located in the data/ folder.
+
+![image](https://user-images.githubusercontent.com/117768679/208189803-cb638b3a-8a10-4914-9041-131ece96e337.png)
