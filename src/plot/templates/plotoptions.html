@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="eng">
+	<head>
+		<title>"Plot Data"</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<style type="text/css">
+			.options label {
+				font-size: 12px;
+				font-family: Arial, Helvetica, sans-serif;
+				width: 200px;
+				text-align: right;
+			}
+			form, p{
+				width: 500px;
+			}
+
+		</style>
+	</head>
+	<body>
+		<h2>Plot Data</h3>
+		<p>Enter the path to the file containing the complex data.  Choose time or frequency domain plots.
+		</p>
+		<div id="form">
+			<form action="http://127.0.0.1:8080/plotdata" method="post">
+				<fieldset>
+					<legend>Plot Data Options</legend>
+					<div class="options">
+						<label for="filename">Filename:</label>
+						<input type="file" id="filename" name="filename" required/>
+						<br />
+						<input type="radio" name="domain" value="time" id="timedomain" checked />
+						<label for="timedomain">Time Domain</label>
+						<input type="radio" name="domain" value="frequency" id="frequencydomain" />
+						<label for="frequencydomain">Frequency Domain</label>
+					</div>
+					<br />
+					<input type="submit" value="Submit" />
+				</fieldset>
+			</form>
+		</div>
+	</body>
+</html>
