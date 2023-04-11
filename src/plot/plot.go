@@ -1,5 +1,5 @@
 /*
-	Plot data in complex(real, imag) from a file, one space-separated coordinate per line.
+	Plot data in complex(real, imag) from a file, one complex number  per line.
 	r1 i1
 	r2 i2
 	...
@@ -11,7 +11,7 @@
 
 	Calculate the power spectral density (PSD) using Welch periodogram spectral
 	estimation and plot it.  Average the periodograms using 50% overlap with a
-	user-chosen window function such as Bartlett, Hann, Hamming, or Welch.
+	user-chosen window function such as Bartlett, Hanning, Hamming, or Welch.
 */
 
 package main
@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log"
 	"math"
+	"math/cmplx"
 	"math/rand"
 	"net/http"
 	"os"
@@ -29,6 +30,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"github.com/mjibson/go-dsp/fft"
 )
 
 const (
@@ -36,6 +39,7 @@ const (
 	columns            = 300                                // #columns in grid
 	tmpltime           = "templates/plottimedata.html"      // html template address
 	tmplfrequency      = "templates/plotfrequencydata.html" // html template address
+	tmploptions        = "templates/plotoptions.html"       // html template address
 	addr               = "127.0.0.1:8080"                   // http server listen address
 	patternPlotData    = "/plotdata"                        // http handler pattern for plotting data
 	patternGenerator   = "/generatedata"                    // http handler pattern for data generation
@@ -48,11 +52,15 @@ const (
 
 // Type to contain all the HTML template actions
 type PlotT struct {
-	Grid     []string // plotting grid
-	Status   string   // status of the plot
-	Xlabel   []string // x-axis labels
-	Ylabel   []string // y-axis labels
-	Filename string   // filename to plot
+	Grid         []string // plotting grid
+	Status       string   // status of the plot
+	Xlabel       []string // x-axis labels
+	Ylabel       []string // y-axis labels
+	Filename     string   // filename to plot
+	SamplingFreq string   // data sampling rate in Hz
+	FFTSegments  string   // FFT segments, K
+	FFTSize      string   // FFT size
+	Samples      string   // complex samples in data file
 }
 
 // Type to hold the minimum and maximum data values
@@ -63,15 +71,44 @@ type Endpoints struct {
 	ymax float64
 }
 
+// Window function type
+type Window func(n int, m int) complex128
+
 var (
-	timeTmpl *template.Template
-	freqTmpl *template.Template
+	timeTmpl   *template.Template
+	freqTmpl   *template.Template
+	optionTmpl *template.Template
+	winType    = []string{"Bartlett", "Welch", "Hamming", "Hanning"}
 )
+
+// Bartlett window
+func bartlett(n int, m int) complex128 {
+	real := 1.0 - math.Abs((float64(n)-float64(m))/float64(m))
+	return complex(real, 0)
+}
+
+// Welch window
+func welch(n int, m int) complex128 {
+	x := math.Abs((float64(n) - float64(m)) / float64(m))
+	real := 1.0 - x*x
+	return complex(real, 0)
+}
+
+// Hamming window
+func hamming(n int, m int) complex128 {
+	return complex(.54-.46*math.Cos(math.Pi*float64(n)/float64(m)), 0)
+}
+
+// Hanning window
+func hanning(n int, m int) complex128 {
+	return complex(.5-.5*math.Cos(math.Pi*float64(n)/float64(m)), 0)
+}
 
 // init parses the html template files are done only once
 func init() {
 	timeTmpl = template.Must(template.ParseFiles(tmpltime))
 	freqTmpl = template.Must(template.ParseFiles(tmplfrequency))
+	optionTmpl = template.Must(template.ParseFiles(tmploptions))
 }
 
 // findEndpoints finds the minimum and maximum data values
@@ -274,9 +311,9 @@ func processTimeDomain(w http.ResponseWriter, r *http.Request, filename string) 
 	// Enter the filename in the form
 	plot.Filename = path.Base(filename)
 
-	// Write to HTTP using template and grid
+	// Write to HTTP using template and grid``
 	if err := timeTmpl.Execute(w, plot); err != nil {
-		log.Fatalf("Write to HTTP output using template with grid error: %v\n", err)
+		log.Fatalf("Write to HTTP output using template with error: %v\n", err)
 	}
 
 	return nil
@@ -286,27 +323,345 @@ func processTimeDomain(w http.ResponseWriter, r *http.Request, filename string) 
 func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename string) error {
 	// Use complex128 for FFT computation
 	// Get the number of complex samples nn, open file and count lines, close the file
-	// Get FFT size and number of segments K in PSD periodogram from form
-	// Require 1 <= K <= 10
-	// Get window type:  Bartlett, Welch, Hann, Hamming, etc
-	// Segment size m = nn/(K+1)
-	// Check FFT Size >= 2*m, 50%  overlap of segments
-	// Check FFT Size is a power of 2:  2^n => n = int(math.Log2(float64(FFT Size) + .5)), this rounds up to
-	//     nearest FFT size that is a power of 2.
-	// FFT Size = math.Exp2(float64(n)), FFT Size = math.Max(2*m, FFT Size)
 
-	// Reopen the data file
-	// Read in m samples into buf[m]
-	// loop over file samples
-	//     copy m samples from buf[m] to front of buf[2m]
-	//     read in m file samples into buf[m]
-	//     copy m samples from buf[m] to back half of buf[2m]
-	//     window the 2m samples with chosen window
-	//     zero-pad N-2m in buf[N], float64
-	//     Perform N-point complex FFT and add squares to previous values in PSD[N/2] -> buf[n], buf[N-n]
-	// Normalize the PSD using N*Sum(w[i]*w[i])*K
-	// Store in the form:  FFT Size, window type, number of samples nn, K segments
-	// Plot the PSD N/2 float64 values, execute the data on the plotfrequency.html template
+	var (
+		plot          PlotT // main data structure to execute with parsed html template
+		endpoints     Endpoints
+		N             int                                     //  complex FFT size
+		nn            int                                     // number of complex samples in the data file
+		K             int                                     //  number of segments used in PSD with 50% overlap
+		m             int                                     // complex segment size
+		win           string                                  // FFT window type
+		window        = make(map[string]Window, len(winType)) // map of window functions
+		sumWindow     float64                                 // sum of squared window values for normalization
+		normalizerPSD float64                                 // normalizer for PSD
+		PSD           []float64                               // power spectral density
+		psdMax        float64                                 // maximum PSD value
+		xscale        float64                                 // data to grid in x direction
+		yscale        float64                                 // data to grid in y direction
+	)
+
+	plot.Grid = make([]string, rows*columns)
+	plot.Xlabel = make([]string, xlabels)
+	plot.Ylabel = make([]string, ylabels)
+
+	// Put the window functions in the map
+	window["Bartlett"] = bartlett
+	window["Welch"] = welch
+	window["Hamming"] = hamming
+	window["Hanning"] = hanning
+
+	// Open file
+	f, err := os.Open(filename)
+	if err == nil {
+		input := bufio.NewScanner(f)
+		// Number of complex data samples
+		for input.Scan() {
+			line := input.Text()
+			if len(line) > 0 {
+				nn++
+			}
+		}
+		fmt.Printf("Data file %s has %d samples\n", filename, nn)
+
+		f.Close()
+
+		// Get number of segments from HTML form
+		// Number of segments to average the periodograms to reduce the variance
+		tmp := r.FormValue("fftsegments")
+		if len(tmp) == 0 {
+			return fmt.Errorf("enter number of FFT segments")
+		}
+		K, err = strconv.Atoi(tmp)
+		if err != nil {
+			fmt.Printf("FFT segments string convert error: %v\n", err)
+			return fmt.Errorf("fft segments string convert error: %v", err)
+		}
+
+		// Require 1 <= K <= 20
+		if K < 1 {
+			K = 1
+		} else if K > 20 {
+			K = 10
+		}
+
+		// segment size complex samples
+		m = nn / (K + 1)
+
+		// Get window type:  Bartlett, Welch, Hanning, Hamming, etc
+		// Multiply the samples by the window to reduce spectral leakage
+		// caused by high sidelobes in rectangular window
+		win = r.FormValue("fftwindow")
+		if len(win) == 0 {
+			return fmt.Errorf("enter FFT window type")
+		}
+		w, ok := window[win]
+		if !ok {
+			fmt.Printf("Invalid FFT window type: %v\n", win)
+			return fmt.Errorf("invalid FFT window type: %v", win)
+		}
+		// sum the window values for PSD normalization due to windowing
+		for i := 0; i < 2*m; i++ {
+			x := cmplx.Abs(w(i, m))
+			sumWindow += x * x
+		}
+
+		// Get FFT size from HTML form
+		// Check FFT Size >= 2*m, using 50%  overlap of segments
+		// Check FFT Size is a power of 2:  2^n
+		tmp = r.FormValue("fftsize")
+		if len(tmp) == 0 {
+			return fmt.Errorf("enter FFT size")
+		}
+		N, err = strconv.Atoi(tmp)
+		if err != nil {
+			return fmt.Errorf("fft size string convert error: %v", err)
+		}
+
+		if N < rows {
+			fmt.Printf("FFT size < %d\n", rows)
+			N = rows
+		} else if N > rows*rows {
+			fmt.Printf("FFT size > %d\n", rows*rows)
+			N = rows * rows
+		}
+		// This rounds up to nearest FFT size that is a power of 2
+		N = int(math.Exp2(math.Log2(float64(N) + .5)))
+
+		if N < 2*m {
+			fmt.Printf("FFT Size %d not greater than 2%d\n", N, 2*m)
+			return fmt.Errorf("fft Size %d not greater than 2*%d", N, 2*m)
+		}
+
+		// Power Spectral Density
+		PSD = make([]float64, N/2+1)
+
+		// Reopen the data file
+		f, err = os.Open(filename)
+		if err == nil {
+			defer f.Close()
+			bufm := make([]complex128, m)
+			bufN := make([]complex128, N)
+			input := bufio.NewScanner(f)
+			// Read in initial m samples into buf[m] to start the processing loop
+			for k := 0; k < m; k++ {
+				input.Scan()
+				line := input.Text()
+				// Each line has 2 or 3 space-separated values, depending on if it is real or complex data:
+				// time real
+				// time real imaginary
+				values := strings.Split(line, " ")
+				// real data
+				if len(values) == 2 {
+					// time real, don't need the time
+					var r float64
+
+					if r, err = strconv.ParseFloat(values[1], 64); err != nil {
+						fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+						continue
+					}
+
+					bufm[k] = complex(r, 0)
+
+					// complex data
+				} else if len(values) == 3 {
+					// time real imag
+					var r, i float64
+					// Don't need the time
+					if r, err = strconv.ParseFloat(values[1], 64); err != nil {
+						fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+						continue
+					}
+
+					if i, err = strconv.ParseFloat(values[2], 64); err != nil {
+						fmt.Printf("String %s conversion to float error: %v\n", values[2], err)
+						continue
+					}
+
+					bufm[k] = complex(r, i)
+				}
+			}
+
+			scanOK := true
+			// loop over the rest of the file, reading in m samples at a time until EOF
+			for {
+				// Put the previous m samples in the front of the buffer N to
+				// overlap segments
+				copy(bufN, bufm)
+				// Put the next m samples in back of the previous m samples
+				kk := 0
+				for k := 0; k < m; k++ {
+					scanOK = input.Scan()
+					if !scanOK {
+						break
+					}
+					line := input.Text()
+					// Each line has 2 space-separated values: real and imaginary
+					values := strings.Split(line, " ")
+					// real data
+					if len(values) == 2 {
+						// time real, don't need the time
+						var r float64
+
+						if r, err = strconv.ParseFloat(values[1], 64); err != nil {
+							fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+							continue
+						}
+						// real data, imaginary component is zero
+						bufm[k] = complex(r, 0)
+
+						// complex data
+					} else if len(values) == 3 {
+						// time real imag
+						var r, i float64
+						// Don't need the time
+						if r, err = strconv.ParseFloat(values[1], 64); err != nil {
+							fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+							continue
+						}
+
+						if i, err = strconv.ParseFloat(values[2], 64); err != nil {
+							fmt.Printf("String %s conversion to float error: %v\n", values[2], err)
+							continue
+						}
+
+						bufm[k] = complex(r, i)
+					}
+					kk++
+				}
+				// Check for the normal EOF and the abnormal scan error
+				// EOF does not give an error but is considered normal termination
+				if !scanOK {
+					if input.Err() != nil {
+						fmt.Printf("Data file scan error: %v", input.Err().Error())
+						return fmt.Errorf("data file scan error: %v", input.Err())
+					}
+				}
+				// Put the next kk samples in back of the previous m
+				copy(bufN[m:], bufm[:kk])
+
+				// window the m + kk samples with chosen window
+				for i := 0; i < m+kk; i++ {
+					bufN[i] *= w(i, m)
+				}
+
+				// zero-pad N-m-kk samples in buf[N]
+				for i := m + kk; i < N; i++ {
+					bufN[i] = 0
+				}
+
+				// Perform N-point complex FFT and add squares to previous values in PSD[N/2+1]
+				fourierN := fft.FFT(bufN)
+				x := cmplx.Abs(fourierN[0])
+				PSD[0] += x * x
+				for i := 1; i < N/2; i++ {
+					// Use positive and negative frequencies -> bufN[N-i] = bufN[-i]
+					xi := cmplx.Abs(fourierN[i])
+					xNi := cmplx.Abs(fourierN[N-i])
+					PSD[i] += xi*xi + xNi*xNi
+				}
+				x = cmplx.Abs(fourierN[N/2])
+				PSD[N/2] += x * x
+
+				// part of K*Sum(w[i]*w[i]) PSD normalizer
+				normalizerPSD += sumWindow
+
+				// EOF reached
+				if !scanOK {
+					break
+				}
+			} // K segments done
+
+			// Normalize the PSD using K*Sum(w[i]*w[i])
+			for i := range PSD {
+				PSD[i] /= normalizerPSD
+				if PSD[i] > psdMax {
+					psdMax = PSD[i]
+				}
+			}
+
+			endpoints.xmin = 0
+			endpoints.xmax = float64(N / 2) // equivalent to Nyquist critical frequency
+			endpoints.ymin = 0
+			endpoints.ymax = psdMax
+
+			// Calculate scale factors for x and y
+			xscale = (columns - 1) / (endpoints.xmax - endpoints.xmin)
+			yscale = (rows - 1) / (endpoints.ymax - endpoints.ymin)
+
+			// Store the PSD in the plot Grid
+			for bin, pow := range PSD {
+				row := int((endpoints.ymax-pow)*yscale + .5)
+				col := int((float64(bin)-endpoints.xmin)*xscale + .5)
+				plot.Grid[row*columns+col] = "online"
+			}
+
+			// Store in the form:  FFT Size, window type, number of samples nn, K segments, sampling frequency
+			// Plot the PSD N/2 float64 values, execute the data on the plotfrequency.html template
+
+			// Set plot status if no errors
+			if len(plot.Status) == 0 {
+				plot.Status = fmt.Sprintf("Status: Data plotted from (%.3f,%.3f) to (%.3f,%.3f)",
+					endpoints.xmin, endpoints.ymin, endpoints.xmax, endpoints.ymax)
+			}
+
+		} else {
+			// Set plot status
+			fmt.Printf("Error opening file %s: %v\n", filename, err)
+			return fmt.Errorf("error opening file %s: %v", filename, err)
+		}
+	} else {
+		// Set plot status
+		fmt.Printf("Error opening file %s: %v\n", filename, err)
+		return fmt.Errorf("error opening file %s: %v", filename, err)
+	}
+
+	// Get sampling rate in Hz
+	temp := r.FormValue("samplingrate")
+	// scale factor to convert fft size to sampling rate/2
+	sf := 1.0
+	if len(temp) > 0 {
+		if freq, err := strconv.Atoi(temp); err != nil {
+			if freq > int(endpoints.xmax) {
+				// scale factor to have x-axis in Hz
+				sf = float64(freq) / endpoints.xmax
+			}
+		}
+	}
+
+	// Construct x-axis labels
+	incr := (endpoints.xmax - endpoints.xmin) / (xlabels - 1)
+	x := endpoints.xmin
+	// First label is empty for alignment purposes
+	for i := range plot.Xlabel {
+		plot.Xlabel[i] = fmt.Sprintf("%.2f", x*sf)
+		x += incr
+	}
+
+	// Construct the y-axis labels
+	incr = (endpoints.ymax - endpoints.ymin) / (ylabels - 1)
+	y := endpoints.ymin
+	for i := range plot.Ylabel {
+		plot.Ylabel[i] = fmt.Sprintf("%.2f", y)
+		y += incr
+	}
+
+	// Insert frequency domain parameters in the form if available
+	plot.SamplingFreq = ""
+	if sf != 1.0 {
+		plot.SamplingFreq = fmt.Sprintf("%.0f", sf*endpoints.xmax)
+	}
+	plot.FFTSegments = strconv.Itoa(K)
+	plot.FFTSize = strconv.Itoa(N)
+	plot.Samples = strconv.Itoa(nn)
+
+	// Enter the filename in the form
+	plot.Filename = path.Base(filename)
+
+	// Write to HTTP using template and grid
+	if err := freqTmpl.Execute(w, plot); err != nil {
+		log.Fatalf("Write to HTTP output using template with error: %v\n", err)
+	}
 
 	return nil
 }
@@ -316,12 +671,9 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 func handlePlotData(w http.ResponseWriter, r *http.Request) {
 	// main data structure
 	var (
-		plot      PlotT
-		endpoints Endpoints
+		plot PlotT
+		err  error = nil
 	)
-	plot.Grid = make([]string, rows*columns)
-	plot.Xlabel = make([]string, xlabels)
-	plot.Ylabel = make([]string, ylabels)
 
 	filename := r.FormValue("filename")
 	// choose time or frequency domain processing
@@ -330,47 +682,43 @@ func handlePlotData(w http.ResponseWriter, r *http.Request) {
 		domain := r.FormValue("domain")
 		switch domain {
 		case "time":
-			err := processTimeDomain(w, r, "data/"+filename)
+			err = processTimeDomain(w, r, path.Join(dataDir, filename))
 			if err != nil {
 				plot.Status = err.Error()
 			}
 		case "frequency":
-			err := processFrequencyDomain(w, r, "data/"+filename)
+			err = processFrequencyDomain(w, r, path.Join(dataDir, filename))
 			if err != nil {
 				plot.Status = err.Error()
 			}
 		default:
 			plot.Status = fmt.Sprintf("Invalid domain choice: %s", domain)
 		}
+
+		if err != nil {
+
+			// Write to HTTP using template and grid``
+			if err := optionTmpl.Execute(w, plot); err != nil {
+				log.Fatalf("Write to HTTP output using template with error: %v\n", err)
+			}
+		}
 	} else {
-		plot.Status = "Status: Provide a data file to plot."
-		// Construct x-axis labels
-		incr := (endpoints.xmax - endpoints.xmin) / (xlabels - 1)
-		x := endpoints.xmin
-		// First label is empty for alignment purposes
-		for i := range plot.Xlabel {
-			plot.Xlabel[i] = fmt.Sprintf("%.2f", x)
-			x += incr
-		}
-
-		// Construct the y-axis labels
-		incr = (endpoints.ymax - endpoints.ymin) / (ylabels - 1)
-		y := endpoints.ymin
-		for i := range plot.Ylabel {
-			plot.Ylabel[i] = fmt.Sprintf("%.2f", y)
-			y += incr
-		}
-
-		// Write to HTTP using template and grid
-		if err := timeTmpl.Execute(w, plot); err != nil {
-			log.Fatalf("Write to HTTP output using template with grid error: %v\n", err)
+		plot.Status = "Missing filename to plot"
+		// Write to HTTP using template and grid``
+		if err := optionTmpl.Execute(w, plot); err != nil {
+			log.Fatalf("Write to HTTP output using template with error: %v\n", err)
 		}
 	}
 }
 
 // HTTP handler for /plotoptions connections
 func handlePlotOptions(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, "templates/plotoptions.html")
+	var plot PlotT
+	plot.Status = "Enter filename and plot options"
+	// Write to HTTP using template and grid``
+	if err := optionTmpl.Execute(w, plot); err != nil {
+		log.Fatalf("Write to HTTP output using template with error: %v\n", err)
+	}
 }
 
 // handleGenerating creates x-y data and saves to disk files

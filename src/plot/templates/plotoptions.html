@@ -5,7 +5,7 @@
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<style type="text/css">
-			.options label {
+			.options label, .freqoptions label {
 				font-size: 12px;
 				font-family: Arial, Helvetica, sans-serif;
 				width: 200px;
@@ -35,7 +35,33 @@
 						<label for="frequencydomain">Frequency Domain</label>
 					</div>
 					<br />
+					<div class="freqoptions">
+						<hr />
+						<h3>Frequency Domain</h3>
+						<p>Enter frequency domain configuration.  FFTs are averaged with 50% overlap.
+							Zero-padding is used as necessary given the number of segments to average and 
+							the FFT size.  The data is windowed to reduce sidelobe spectral leakage with a 
+							cost of main lobe widening and reduced resolution.  The sampling rate is optional.
+							Supplying it will allow the FFT bin axis to display frequency in Hz instead of 
+							bin number.                                                                                                 
+						</p>
+						<label for="fftsize">FFT Size:</label>
+						<input type="number" id="fftsize" name="fftsize" min="300" max="90000" value="1024" />
+						<label for="fftsegments">FFT Segments:</label>
+						<input type="number" id="fftseg" name="fftsegments" min="1" max="20" value="1" />
+						<br />
+						<label for="fftwindow">FFT Window:</label>
+						<select id="fftwindow" name="fftwindow">
+							<option value="Bartlett" selected>Bartlett</option>
+							<option value="Welch">Welch</option>
+							<option value="Hamming">Hamming</option>
+							<option value="Hanning">Hanning</option>
+						</select>
+						<label for="samplingrate">Sampling Rate (Hz):</label>
+						<input type="number" id="samplingrate" min="1" />
+					</div>
 					<input type="submit" value="Submit" />
+					<input type="text" size="50" name="status" value="{{.Status}}" readonly />
 				</fieldset>
 			</form>
 		</div>

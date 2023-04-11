@@ -1,15 +1,15 @@
 <!DOCTYPE html>
 <html lang="eng">
 	<head>
-		<title>"Plot Data"</title>
+		<title>"Plot Frequency Data"</title>
 		<meta charset="utf-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<style type="text/css">
 
-			.options label {
+			.options label, .freqoptions label {
 				font-size: 12px;
 				font-family: Arial, Helvetica, sans-serif;
-				width: 20px;
+				min-width: 200px;
 				text-align: right;
 				padding-right: 10px;
 			}
@@ -93,6 +93,7 @@
 
 			#form {
 				margin-left: 10px;
+				width: 600px;
 			}
 
 			#filename {
@@ -102,9 +103,22 @@
 			#rotate {
 				margin-left: 3px;
 			}
+
+			ul li.links {
+				display: inline-block;
+				list-style-type: none;
+				margin: 20px;
+			}
+
 		</style>
 	</head>
 	<body>
+		<h2>Frequency Data Plot</h3>
+		<nav>
+			<ul>
+				<li class="links"><a href="http://127.0.0.1:8080/plotoptions">Plot Options</a></li>
+			</ul>
+		</nav>
 		<div id="outer-container">
 			<div id="ylabel-container">
 				{{range .Ylabel}}
@@ -129,21 +143,38 @@
 						<legend>Plot Data Options</legend>
 						<div class="options">
 							<label for="filename">Filename:</label>
-							<input type="text" id="filename" name="filename" />
+							<input type="text" id="filename" name="filename" value="{{.Filename}}" readonly />
+							<label for="frequencydomain">Plot Domain:</label>
+							<input type="text" name="domain" value="frequency" id="frequencydomain" readonly />
+							<br />	
+						</div>
+						<div class="freqoptions">
+							<hr />
+							<h3>Frequency Domain</h3>
+							<p>Enter frequency domain configuration.  FFTs are averaged with 50% overlap.
+								Zero-padding is used as necessary given the number of segments to average and 
+								the FFT size.  The data is windowed to reduce sidelobe spectral leakage with a 
+								cost of main lobe widening and reduced resolution.  The sampling rate is optional.
+								Supplying it will allow the FFT bin axis to display frequency in Hz instead of 
+								bin number.                                                                                                 
+							</p>
+							<label for="fftsize">FFT Size:</label>
+							<input type="number" id="fftsize" name="fftsize" min="300" max="90000" value="{{.FFTSize}}" required/>
+							<label for="fftsegments">FFT Segments:</label>
+							<input type="number" id="fftseg" name="fftsegments" min="1" max="20" value="{{.FFTSegments}}" required/>
 							<br />
-							<label for="zoomxstart">Zoom x Start:</label>
-							<input type="text" id="zoomsxtart" name="zoomxstart" />
-							<label for="zoomxend">x End:</label>
-							<input type="text" id="zoomxend" name="zoomxend" />
+							<label for="fftwindow">FFT Window:</label>
+							<select id="fftwindow" name="fftwindow" required>
+								<option value="Bartlett" selected>Bartlett</option>
+								<option value="Welch">Welch</option>
+								<option value="Hamming">Hamming</option>
+								<option value="Hanning">Hanning</option>
+							</select>
+							<label for="samplingrate">Sampling Rate (Hz):</label>
+							<input type="number" id="samplingrate" name="samplingrate" min="1" value="{{.SamplingFreq}}"/>
 							<br />
-							<label for="zoomystart" >Zoom y Start:</label>
-							<input type="text" id="zoomystart" name="zoomystart" />
-							<label for="zoomyend">y End:</label>
-							<input type="text" id="zoomyend" name="zoomyend" />
-							<br />
-							<label for="rotate">Rotate (deg):</label>
-							<input type="text" id="rotate" name="rotate" />
-							<br />
+							<label for="samples">Data Samples:</label>
+							<input type="string" id="samples" value="{{.Samples}}" readonly />
 						</div>
 						<input type="submit" value="Submit" />
 						<input type="text" size="50" name="status" value="{{.Status}}" readonly />
