@@ -119,20 +119,46 @@ func (ep *Endpoints) findEndpoints(input *bufio.Scanner, rad float64) {
 	ep.ymin = math.MaxFloat64
 	for input.Scan() {
 		line := input.Text()
-		// Each line has 2 space-separated values: x y coordinates can be int or float
-		coord := strings.Split(line, " ")
+		// Each line has 2 or 3 space-separated values, depending on if it is real or complex data:
+		// time real, or x y for euclidean data
+		// time real imaginary for complex data
+		values := strings.Split(line, " ")
 		var (
-			x, y float64
-			err  error
+			x, y, t float64
+			err     error
 		)
-		if x, err = strconv.ParseFloat(coord[0], 64); err != nil {
-			fmt.Printf("String %s conversion to float error: %v\n", coord[0], err)
-			continue
-		}
+		// real data
+		if len(values) == 2 {
+			if x, err = strconv.ParseFloat(values[0], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
+				continue
+			}
 
-		if y, err = strconv.ParseFloat(coord[1], 64); err != nil {
-			fmt.Printf("String %s conversion to float error: %v\n", coord[1], err)
-			continue
+			if y, err = strconv.ParseFloat(values[1], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+				continue
+			}
+			// complex data
+		} else if len(values) == 3 {
+			if t, err = strconv.ParseFloat(values[0], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
+				continue
+			}
+
+			if x, err = strconv.ParseFloat(values[1], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+				continue
+			}
+
+			if y, err = strconv.ParseFloat(values[2], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[2], err)
+				continue
+			}
+
+			// Calculate the modulus of the complex data becomes the y-axis
+			// The time becomes the x-axis
+			y = math.Sqrt(x*x + y*y)
+			x = t
 		}
 
 		// rotation
@@ -242,17 +268,46 @@ func processTimeDomain(w http.ResponseWriter, r *http.Request, filename string) 
 
 			for input.Scan() {
 				line := input.Text()
-				// Each line has 2 space-separated values: x y coordinates can be int or float
-				coord := strings.Split(line, " ")
-				var x, y float64
-				if x, err = strconv.ParseFloat(coord[0], 64); err != nil {
-					fmt.Printf("String %s conversion to float error: %v\n", coord[0], err)
-					continue
-				}
+				// Each line has 2 or 3 space-separated values, depending on if it is real or complex data:
+				// time real, or x y for euclidean data
+				// time real imaginary for complex data
+				values := strings.Split(line, " ")
+				var (
+					x, y, t float64
+					err     error
+				)
+				// real data
+				if len(values) == 2 {
+					if x, err = strconv.ParseFloat(values[0], 64); err != nil {
+						fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
+						continue
+					}
 
-				if y, err = strconv.ParseFloat(coord[1], 64); err != nil {
-					fmt.Printf("String %s conversion to float error: %v\n", coord[1], err)
-					continue
+					if y, err = strconv.ParseFloat(values[1], 64); err != nil {
+						fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+						continue
+					}
+					// complex data
+				} else if len(values) == 3 {
+					if t, err = strconv.ParseFloat(values[0], 64); err != nil {
+						fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
+						continue
+					}
+
+					if x, err = strconv.ParseFloat(values[1], 64); err != nil {
+						fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+						continue
+					}
+
+					if y, err = strconv.ParseFloat(values[2], 64); err != nil {
+						fmt.Printf("String %s conversion to float error: %v\n", values[2], err)
+						continue
+					}
+
+					// Calculate the modulus of the complex data becomes the y-axis
+					// The time becomes the x-axis
+					y = math.Sqrt(x*x + y*y)
+					x = t
 				}
 
 				// rotation
@@ -327,18 +382,20 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 	var (
 		plot          PlotT // main data structure to execute with parsed html template
 		endpoints     Endpoints
-		N             int                                     //  complex FFT size
-		nn            int                                     // number of complex samples in the data file
-		K             int                                     //  number of segments used in PSD with 50% overlap
-		m             int                                     // complex segment size
-		win           string                                  // FFT window type
-		window        = make(map[string]Window, len(winType)) // map of window functions
-		sumWindow     float64                                 // sum of squared window values for normalization
-		normalizerPSD float64                                 // normalizer for PSD
-		PSD           []float64                               // power spectral density
-		psdMax        float64                                 // maximum PSD value
-		xscale        float64                                 // data to grid in x direction
-		yscale        float64                                 // data to grid in y direction
+		N             int                                                        //  complex FFT size
+		nn            int                                                        // number of complex samples in the data file
+		K             int                                                        //  number of segments used in PSD with 50% overlap
+		m             int                                                        // complex segment size
+		win           string                                                     // FFT window type
+		window        = make(map[string]Window, len(winType))                    // map of window functions
+		sumWindow     float64                                                    // sum of squared window values for normalization
+		normalizerPSD float64                                                    // normalizer for PSD
+		PSD           []float64                                                  // power spectral density
+		psdMax        float64                                 = -math.MaxFloat64 // maximum PSD value
+		psdMin        float64                                 = math.MaxFloat64  // minimum PSD value
+		xscale        float64                                                    // data to grid in x direction
+		yscale        float64                                                    // data to grid in y direction
+		samplingRate  float64                                                    // sampling rate in Hz
 	)
 
 	plot.Grid = make([]string, rows*columns)
@@ -355,7 +412,7 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 	f, err := os.Open(filename)
 	if err == nil {
 		input := bufio.NewScanner(f)
-		// Number of complex data samples
+		// Number of real or complex data samples
 		for input.Scan() {
 			line := input.Text()
 			if len(line) > 0 {
@@ -382,7 +439,7 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 		if K < 1 {
 			K = 1
 		} else if K > 20 {
-			K = 10
+			K = 20
 		}
 
 		// segment size complex samples
@@ -405,6 +462,7 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 			x := cmplx.Abs(w(i, m))
 			sumWindow += x * x
 		}
+		fmt.Printf("%s window sum = %.2f\n", win, sumWindow)
 
 		// Get FFT size from HTML form
 		// Check FFT Size >= 2*m, using 50%  overlap of segments
@@ -433,7 +491,8 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 			return fmt.Errorf("fft Size %d not greater than 2*%d", N, 2*m)
 		}
 
-		// Power Spectral Density
+		// Power Spectral Density, PSD[N/2] is the Nyquist critical frequency
+		// It is the (sampling frequency)/2, the highest non-aliased frequency
 		PSD = make([]float64, N/2+1)
 
 		// Reopen the data file
@@ -444,30 +503,47 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 			bufN := make([]complex128, N)
 			input := bufio.NewScanner(f)
 			// Read in initial m samples into buf[m] to start the processing loop
+			diff := 0.0
+			prev := 0.0
 			for k := 0; k < m; k++ {
 				input.Scan()
 				line := input.Text()
 				// Each line has 2 or 3 space-separated values, depending on if it is real or complex data:
 				// time real
-				// time real imaginary
+				// time real imaginary for complex data
 				values := strings.Split(line, " ")
 				// real data
 				if len(values) == 2 {
-					// time real, don't need the time
-					var r float64
+					// time real, calculate the sampling rate from the time steps
+					var t, r float64
 
+					if t, err = strconv.ParseFloat(values[0], 64); err != nil {
+						fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
+						continue
+					}
 					if r, err = strconv.ParseFloat(values[1], 64); err != nil {
 						fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
 						continue
 					}
 
+					if k == 0 {
+						prev = t
+					} else {
+						diff += t - prev
+						prev = t
+					}
 					bufm[k] = complex(r, 0)
 
 					// complex data
 				} else if len(values) == 3 {
 					// time real imag
-					var r, i float64
-					// Don't need the time
+					var t, r, i float64
+
+					// calculate the sampling rate from the time steps
+					if t, err = strconv.ParseFloat(values[0], 64); err != nil {
+						fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
+						continue
+					}
 					if r, err = strconv.ParseFloat(values[1], 64); err != nil {
 						fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
 						continue
@@ -478,9 +554,19 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 						continue
 					}
 
+					if k == 0 {
+						prev = t
+					} else {
+						diff += t - prev
+						prev = t
+					}
 					bufm[k] = complex(r, i)
 				}
 			}
+
+			// Average the time steps and invert to get the sampling rate
+			samplingRate = 1.0 / (diff / float64(m-1))
+			fmt.Printf("sampling rate = %.2f\n", samplingRate)
 
 			scanOK := true
 			// loop over the rest of the file, reading in m samples at a time until EOF
@@ -573,16 +659,34 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 			} // K segments done
 
 			// Normalize the PSD using K*Sum(w[i]*w[i])
-			for i := range PSD {
-				PSD[i] /= normalizerPSD
-				if PSD[i] > psdMax {
-					psdMax = PSD[i]
+			// Use log plot for wide dynamic range
+			if r.FormValue("plottype") == "linear" {
+				for i := range PSD {
+					PSD[i] /= normalizerPSD
+					if PSD[i] > psdMax {
+						psdMax = PSD[i]
+					}
+					if PSD[i] < psdMin {
+						psdMin = PSD[i]
+					}
+				}
+				// log10 in dB
+			} else {
+				for i := range PSD {
+					PSD[i] /= normalizerPSD
+					PSD[i] = 10.0 * math.Log10(PSD[i])
+					if PSD[i] > psdMax {
+						psdMax = PSD[i]
+					}
+					if PSD[i] < psdMin {
+						psdMin = PSD[i]
+					}
 				}
 			}
 
 			endpoints.xmin = 0
 			endpoints.xmax = float64(N / 2) // equivalent to Nyquist critical frequency
-			endpoints.ymin = 0
+			endpoints.ymin = psdMin
 			endpoints.ymax = psdMax
 
 			// Calculate scale factors for x and y
@@ -616,25 +720,16 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 		return fmt.Errorf("error opening file %s: %v", filename, err)
 	}
 
-	// Get sampling rate in Hz
-	temp := r.FormValue("samplingrate")
-	// scale factor to convert fft size to sampling rate/2
-	sf := 1.0
-	if len(temp) > 0 {
-		if freq, err := strconv.Atoi(temp); err != nil {
-			if freq > int(endpoints.xmax) {
-				// scale factor to have x-axis in Hz
-				sf = float64(freq) / endpoints.xmax
-			}
-		}
-	}
+	// Apply the  sampling rate in Hz to the x-axis using a scale factor
+	// Convert the fft size to sampling rate/2, the Nyquist critical frequency
+	sf := 0.5 * samplingRate / endpoints.xmax
 
 	// Construct x-axis labels
 	incr := (endpoints.xmax - endpoints.xmin) / (xlabels - 1)
 	x := endpoints.xmin
 	// First label is empty for alignment purposes
 	for i := range plot.Xlabel {
-		plot.Xlabel[i] = fmt.Sprintf("%.2f", x*sf)
+		plot.Xlabel[i] = fmt.Sprintf("%.0f", x*sf)
 		x += incr
 	}
 
@@ -646,11 +741,8 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 		y += incr
 	}
 
-	// Insert frequency domain parameters in the form if available
-	plot.SamplingFreq = ""
-	if sf != 1.0 {
-		plot.SamplingFreq = fmt.Sprintf("%.0f", sf*endpoints.xmax)
-	}
+	// Insert frequency domain parameters in the form
+	plot.SamplingFreq = fmt.Sprintf("%.0f", samplingRate)
 	plot.FFTSegments = strconv.Itoa(K)
 	plot.FFTSize = strconv.Itoa(N)
 	plot.Samples = strconv.Itoa(nn)

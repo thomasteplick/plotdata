@@ -154,9 +154,7 @@
 							<p>Enter frequency domain configuration.  FFTs are averaged with 50% overlap.
 								Zero-padding is used as necessary given the number of segments to average and 
 								the FFT size.  The data is windowed to reduce sidelobe spectral leakage with a 
-								cost of main lobe widening and reduced resolution.  The sampling rate is optional.
-								Supplying it will allow the FFT bin axis to display frequency in Hz instead of 
-								bin number.                                                                                                 
+								cost of main lobe widening and reduced resolution.                                                                                                 
 							</p>
 							<label for="fftsize">FFT Size:</label>
 							<input type="number" id="fftsize" name="fftsize" min="300" max="90000" value="{{.FFTSize}}" required/>
@@ -171,11 +169,16 @@
 								<option value="Hanning">Hanning</option>
 							</select>
 							<label for="samplingrate">Sampling Rate (Hz):</label>
-							<input type="number" id="samplingrate" name="samplingrate" min="1" value="{{.SamplingFreq}}"/>
+							<input type="number" id="samplingrate" name="samplingrate" value="{{.SamplingFreq}}" readonly/>
 							<br />
 							<label for="samples">Data Samples:</label>
 							<input type="string" id="samples" value="{{.Samples}}" readonly />
-						</div>
+							<br />
+							<input type="radio" name="plottype" value="linear" id="linearplot" checked />
+							<label for="linearplot">Linear Plot</label>
+							<input type="radio" name="plottype" value="log" id="logplot" />
+							<label for="logplot">Log Plot</label>
+							</div>
 						<input type="submit" value="Submit" />
 						<input type="text" size="50" name="status" value="{{.Status}}" readonly />
 					</fieldset>
