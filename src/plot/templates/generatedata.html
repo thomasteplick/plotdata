@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="eng">
+	<head>
+		<title>"Generate Data"</title>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<style type="text/css">
+			.options label, .figureoptions label, .signaloptions label {
+				font-size: 12px;
+				font-family: Arial, Helvetica, sans-serif;
+				width: 200px;
+				text-align: right;
+			}
+			
+			form, p{
+				width: 800px;
+			}
+
+			#signalcontainer {
+				display: flex;
+				flex-direction: row;
+				justify-content: space-evenly;			
+			}
+
+			input[type="number"] {
+				width: 50px;
+			}
+
+			.signaltype {
+				border: 2px solid black;
+				margin: 10px;
+			}
+
+		</style>
+	</head>
+	<body>
+		<h2>Generate Data</h3>
+		<nav>
+			<ul>
+				<li class="links"><a href="http://127.0.0.1:8080/plotoptions">Plot Options</a></li>
+			</ul>
+		</nav>
+		<p>Choose figure or signal waveform data to generate.  Use the Plot Options link to view them.
+			They will be stored in the data directory.
+		</p>
+		<div id="form">
+			<form action="http://127.0.0.1:8080/generatedata" method="post">
+				<fieldset>
+					<legend>Generate Data Options</legend>
+					<div class="options">
+						<label for="samples">Samples:</label>
+						<input type="number" id="samples" name="samples" min="3000" max="16000" required/>
+						<label for="samplerate">Sample Rate:</label>
+						<input type="number" id="samplerate" name="samplerate" min="1" required />
+						<br />
+						<input type="radio" name="category" value="figure" id="figurecat" checked />
+						<label for="figurecat">Figures</label>
+						<input type="radio" name="category" value="signal" id="signalcat" />
+						<label for="signalcat">Signals</label>
+					</div>
+					<hr />
+					<div class="figureoptions">
+						<h3>Figure Options</h3>
+						<p>Enter the figures you wish to generate:</p>
+						<input type="checkbox" name="figuresine" id="figuresine" value="sine" />
+						<label for="figuresine">Sine Wave</label>
+						<input type="checkbox" name="figurecircle" id="figurecircle" value="circle" />
+						<label for="figurecircle">Circle</label>
+						<input type="checkbox" name="figurespiral" id="figurespiral" value="spiral" />
+						<label for="figurespiral">Spiral</label>
+						<input type="checkbox" name="figuresawtooth" id="figuresawtooth" value="sawtooth" />
+						<label for="figuresawtooth">Sawtooth</label>
+						<input type="checkbox" name="figurecardoid" id="figurecardoid" value="cardoid" />
+						<label for="figurecardoid">Cardoid</label>
+					</div>
+					<hr />
+					<div class="signaloptions">
+						<h3>Signal Options</h3>
+						<p>Enter the signal you wish to generate:
+							<ul>
+								<li>Sum of Sinusoids with Gaussian noise at a specified SNR</li>
+								<li>Amplitude Modulation (AM) waveform consisting of a sin wave with a cosine amplitude envelope</li>
+								<li>Linear Frequency Modulation (LFM) waveform</li>
+							</ul>
+						</p>
+						<input type="radio" name="signaltype" value="sumsinusoids" id="sumsinusoids" checked />
+						<label for="sumsinusoids">Sum of Sinsuoids</label>
+						<input type="radio" name="signaltype" value="am" id="am" />
+						<label for="am">Amplitude Modulation</label>
+						<input type="radio" name="signaltype" value="fm" id="fm" />
+						<label for="fm">Frequency Modulation</label>
+						<br />
+						<div id="signalcontainer">
+							<div class="signaltype">
+								<h4>Sum of Sinsuoids in Gaussian Noise</h4>
+								<!-- SNR with respect to largest sinsuoid -->
+								<label for="SSsnr">SNR (dB):</label>
+								<input type="number" id="SSsnr" name="SSsnr" min="1" />
+								<br />
+								<!-- max five sinsuoids -->
+								<label for="SSfreq1">Frequency 1 (Hz):</label>
+								<input type="number" id="SSfreq1" name="SSfreq1" min="1" />
+								<label for="SSamp1">Amplitude 1:</label>
+								<input type="number" id="SSamp1" name="SSamp1" min="1" max="10" />
+								<br />
+								<label for="SSfreq2">Frequency 2 (Hz):</label>
+								<input type="number" id="SSfreq2" name="SSfreq2" min="1" />
+								<label for="SSamp2">Amplitude 2:</label>
+								<input type="number" id="SSamp2" name="SSamp2" min="1" max="10" />
+								<br />
+								<label for="SSfreq3">Frequency 3 (Hz):</label>
+								<input type="number" id="SSfreq3" name="SSfreq3" min="1" />
+								<label for="SSamp3">Amplitude 3:</label>
+								<input type="number" id="SSamp3" name="SSamp3" min="1" max="10" />
+								<br />
+								<label for="SSfreq4">Frequency 4 (Hz):</label>
+								<input type="number" id="SSfreq4" name="SSfreq4" min="1" />
+								<label for="SSamp4">Amplitude 4:</label>
+								<input type="number" id="SSamp4" name="SSamp4" min="1" max="10" />
+								<br />
+								<label for="SSfreq5">Frequency 5 (Hz):</label>
+								<input type="number" id="SSfreq5" name="SSfreq5" min="1" />
+								<label for="SSamp5">Amplitude 5:</label>
+								<input type="number" id="SSamp5" name="SSamp5" min="1" max="10" />
+								<br />		
+							</div>
+							<div class="signaltype" >
+								<h4>Amplitude Modulation (DSB)</h4>
+								<label for="percentmodulation">Modulation Percent:</label>
+								<input type="number" id="percentmodulation" name="percentmodulation" min="0" max="100" />
+								<br />
+								<label for="carrierfreq">Carrier Frequency (Hz):</label>
+								<input type="number" id="carrierfreq" name="carrierfreq" min="1" />
+								<br />
+								<label for="modulfreq">Modulating Frequency (Hz):</label>
+								<input type="number" id="modulfreq" name="modulfreq" min="1" />
+							</div>
+							<div class="signaltype">
+								<h4>Linear Frequency Modulation</h4>
+								<label for="FMbandwidth">Bandwidth (Hz):</label>
+								<input type="number" id="FMbandwidth" name="FMbandwidth" min="1" />
+								<br />
+								<label for="FMfrequency">Center Frequency (Hz):</label>
+								<input type="number" id="FMfrequency" name="FMfrequency" min="1" />
+							</div>
+						</div>
+					</div>
+					<input type="submit" value="Submit" />
+					<input type="text" size="50" name="status" value="{{.Status}}" readonly />
+				</fieldset>
+			</form>
+		</div>
+	</body>
+</html>

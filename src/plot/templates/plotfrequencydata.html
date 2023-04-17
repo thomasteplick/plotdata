@@ -117,6 +117,7 @@
 		<nav>
 			<ul>
 				<li class="links"><a href="http://127.0.0.1:8080/plotoptions">Plot Options</a></li>
+				<li class="links"><a href="http://127.0.0.1:8080/generatedata">Generate Data</a></li>
 			</ul>
 		</nav>
 		<div id="outer-container">
@@ -167,6 +168,7 @@
 								<option value="Welch">Welch</option>
 								<option value="Hamming">Hamming</option>
 								<option value="Hanning">Hanning</option>
+								<option value="Rectangle">Rectangle</option>
 							</select>
 							<label for="samplingrate">Sampling Rate (Hz):</label>
 							<input type="number" id="samplingrate" name="samplingrate" value="{{.SamplingFreq}}" readonly/>

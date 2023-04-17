@@ -29,25 +29,25 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/mjibson/go-dsp/fft"
 )
 
 const (
-	rows               = 300                                // #rows in grid
-	columns            = 300                                // #columns in grid
-	tmpltime           = "templates/plottimedata.html"      // html template address
-	tmplfrequency      = "templates/plotfrequencydata.html" // html template address
-	tmploptions        = "templates/plotoptions.html"       // html template address
-	addr               = "127.0.0.1:8080"                   // http server listen address
-	patternPlotData    = "/plotdata"                        // http handler pattern for plotting data
-	patternGenerator   = "/generatedata"                    // http handler pattern for data generation
-	patternPlotOptions = "/plotoptions"                     // http handler for Plot Options
-	xlabels            = 11                                 // # labels on x axis
-	ylabels            = 11                                 // # labels on y axis
-	dataDir            = "data/"                            // directory for the data files
-	deg2rad            = math.Pi / 180.0                    // convert degrees to radians
+	rows                = 300                                // #rows in grid
+	columns             = 300                                // #columns in grid
+	tmpltime            = "templates/plottimedata.html"      // html template address
+	tmplfrequency       = "templates/plotfrequencydata.html" // html template address
+	tmploptions         = "templates/plotoptions.html"       // html template address
+	tmplgenerate        = "templates/generatedata.html"      // html template address
+	addr                = "127.0.0.1:8080"                   // http server listen address
+	patternPlotData     = "/plotdata"                        // http handler pattern for plotting data
+	patternGenerateData = "/generatedata"                    // http handler pattern for data generation
+	patternPlotOptions  = "/plotoptions"                     // http handler for Plot Options
+	xlabels             = 11                                 // # labels on x axis
+	ylabels             = 11                                 // # labels on y axis
+	dataDir             = "data/"                            // directory for the data files
+	deg2rad             = math.Pi / 180.0                    // convert degrees to radians
 )
 
 // Type to contain all the HTML template actions
@@ -75,10 +75,11 @@ type Endpoints struct {
 type Window func(n int, m int) complex128
 
 var (
-	timeTmpl   *template.Template
-	freqTmpl   *template.Template
-	optionTmpl *template.Template
-	winType    = []string{"Bartlett", "Welch", "Hamming", "Hanning"}
+	timeTmpl     *template.Template
+	freqTmpl     *template.Template
+	generateTmpl *template.Template
+	optionTmpl   *template.Template
+	winType      = []string{"Bartlett", "Welch", "Hamming", "Hanning"}
 )
 
 // Bartlett window
@@ -104,11 +105,17 @@ func hanning(n int, m int) complex128 {
 	return complex(.5-.5*math.Cos(math.Pi*float64(n)/float64(m)), 0)
 }
 
+// Rectangle window
+func rectangle(n int, m int) complex128 {
+	return 1.0
+}
+
 // init parses the html template files are done only once
 func init() {
 	timeTmpl = template.Must(template.ParseFiles(tmpltime))
 	freqTmpl = template.Must(template.ParseFiles(tmplfrequency))
 	optionTmpl = template.Must(template.ParseFiles(tmploptions))
+	generateTmpl = template.Must(template.ParseFiles(tmplgenerate))
 }
 
 // findEndpoints finds the minimum and maximum data values
@@ -183,6 +190,239 @@ func (ep *Endpoints) findEndpoints(input *bufio.Scanner, rad float64) {
 			ep.ymin = y
 		}
 	}
+}
+
+// gridFill inserts the data points in the grid
+func gridFill(plot *PlotT, xscale float64, yscale float64, endpoints Endpoints, rad float64, input *bufio.Scanner) error {
+	for input.Scan() {
+		line := input.Text()
+		// Each line has 2 or 3 space-separated values, depending on if it is real or complex data:
+		// time real, or x y for euclidean data
+		// time real imaginary for complex data
+		values := strings.Split(line, " ")
+		var (
+			x, y, t float64
+			err     error
+		)
+		// real data
+		if len(values) == 2 {
+			if x, err = strconv.ParseFloat(values[0], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
+				return err
+			}
+
+			if y, err = strconv.ParseFloat(values[1], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+				return err
+			}
+			// complex data
+		} else if len(values) == 3 {
+			if t, err = strconv.ParseFloat(values[0], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
+				return err
+			}
+
+			if x, err = strconv.ParseFloat(values[1], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+				return err
+			}
+
+			if y, err = strconv.ParseFloat(values[2], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[2], err)
+				return err
+			}
+
+			// Calculate the modulus of the complex data becomes the y-axis
+			// The time becomes the x-axis
+			y = math.Sqrt(x*x + y*y)
+			x = t
+		}
+
+		// rotation
+		if rad != 0.0 {
+			xrot := x*math.Cos(rad) + y*math.Sin(rad)
+			yrot := -x*math.Sin(rad) + y*math.Cos(rad)
+			x = xrot
+			y = yrot
+		}
+
+		// Check if inside the zoom values
+		if x < endpoints.xmin || x > endpoints.xmax || y < endpoints.ymin || y > endpoints.ymax {
+			continue
+		}
+
+		// This cell location (row,col) is on the line
+		row := int((endpoints.ymax-y)*yscale + .5)
+		col := int((x-endpoints.xmin)*xscale + .5)
+		plot.Grid[row*columns+col] = "online"
+	}
+	return nil
+}
+
+// gridFillInterp inserts the data points in the grid and draws a straight line between points
+func gridFillInterp(plot *PlotT, xscale float64, yscale float64, endpoints Endpoints, rad float64, input *bufio.Scanner) error {
+
+	var (
+		x, y, t      float64
+		prevX, prevY float64
+		prevSet      bool = true
+		err          error
+	)
+
+	const lessen = 8
+
+	// Get first sample
+	input.Scan()
+	line := input.Text()
+	// Each line has 2 or 3 space-separated values, depending on if it is real or complex data:
+	// time real, or x y for euclidean data
+	// time real imaginary for complex data
+	values := strings.Split(line, " ")
+	// real data
+	if len(values) == 2 {
+		if x, err = strconv.ParseFloat(values[0], 64); err != nil {
+			fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
+			return err
+		}
+
+		if y, err = strconv.ParseFloat(values[1], 64); err != nil {
+			fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+			return err
+		}
+		// complex data
+	} else if len(values) == 3 {
+		if t, err = strconv.ParseFloat(values[0], 64); err != nil {
+			fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
+			return err
+		}
+
+		if x, err = strconv.ParseFloat(values[1], 64); err != nil {
+			fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+			return err
+		}
+
+		if y, err = strconv.ParseFloat(values[2], 64); err != nil {
+			fmt.Printf("String %s conversion to float error: %v\n", values[2], err)
+			return err
+		}
+
+		// Calculate the modulus of the complex data becomes the y-axis
+		// The time becomes the x-axis
+		y = math.Sqrt(x*x + y*y)
+		x = t
+	}
+
+	// rotation
+	if rad != 0.0 {
+		xrot := x*math.Cos(rad) + y*math.Sin(rad)
+		yrot := -x*math.Sin(rad) + y*math.Cos(rad)
+		x = xrot
+		y = yrot
+	}
+
+	// Check if inside the zoom values
+	if x < endpoints.xmin || x > endpoints.xmax || y < endpoints.ymin || y > endpoints.ymax {
+		prevSet = false
+	} else {
+		// This cell location (row,col) is on the line
+		row := int((endpoints.ymax-y)*yscale + .5)
+		col := int((x-endpoints.xmin)*xscale + .5)
+		plot.Grid[row*columns+col] = "online"
+
+		prevX = x
+		prevY = y
+	}
+
+	// Scale factor to determine the number of interpolation points
+	lenEP := math.Sqrt((endpoints.xmax-endpoints.xmin)*(endpoints.xmax-endpoints.xmin) +
+		(endpoints.ymax-endpoints.ymin)*(endpoints.ymax-endpoints.ymin))
+
+	// Continue with the rest of the points in the file
+	for input.Scan() {
+		line = input.Text()
+		// Each line has 2 or 3 space-separated values, depending on if it is real or complex data:
+		// time real, or x y for euclidean data
+		// time real imaginary for complex data
+		values := strings.Split(line, " ")
+		// real data
+		if len(values) == 2 {
+			if x, err = strconv.ParseFloat(values[0], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
+				return err
+			}
+
+			if y, err = strconv.ParseFloat(values[1], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+				return err
+			}
+			// complex data
+		} else if len(values) == 3 {
+			if t, err = strconv.ParseFloat(values[0], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
+				return err
+			}
+
+			if x, err = strconv.ParseFloat(values[1], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
+				return err
+			}
+
+			if y, err = strconv.ParseFloat(values[2], 64); err != nil {
+				fmt.Printf("String %s conversion to float error: %v\n", values[2], err)
+				return err
+			}
+
+			// Calculate the modulus of the complex data becomes the y-axis
+			// The time becomes the x-axis
+			y = math.Sqrt(x*x + y*y)
+			x = t
+		}
+
+		// rotation
+		if rad != 0.0 {
+			xrot := x*math.Cos(rad) + y*math.Sin(rad)
+			yrot := -x*math.Sin(rad) + y*math.Cos(rad)
+			x = xrot
+			y = yrot
+		}
+
+		// Check if inside the zoom values
+		if x < endpoints.xmin || x > endpoints.xmax || y < endpoints.ymin || y > endpoints.ymax {
+			continue
+		} else if !prevSet {
+			prevSet = true
+			prevX = x
+			prevY = y
+		}
+
+		// This cell location (row,col) is on the line
+		row := int((endpoints.ymax-y)*yscale + .5)
+		col := int((x-endpoints.xmin)*xscale + .5)
+		plot.Grid[row*columns+col] = "online"
+
+		// Interpolate the points between previous point and current point
+
+		lenEdge := math.Sqrt((x-prevX)*(x-prevX) + (y-prevY)*(y-prevY))
+		ncells := int(columns*lenEdge/lenEP) / lessen // number of points to interpolate
+		stepX := (x - prevX) / float64(ncells)
+		stepY := (y - prevY) / float64(ncells)
+
+		// loop to draw the points
+		interpX := prevX
+		interpY := prevY
+		for i := 0; i < ncells; i++ {
+			row := int((endpoints.ymax-interpY)*yscale + .5)
+			col := int((interpX-endpoints.xmin)*xscale + .5)
+			plot.Grid[row*columns+col] = "online"
+			interpX += stepX
+			interpY += stepY
+		}
+
+		// Update the previous point with the current point
+		prevX = x
+		prevY = y
+	}
+	return nil
 }
 
 // processTimeDomain plots the time domain data from disk file
@@ -266,69 +506,17 @@ func processTimeDomain(w http.ResponseWriter, r *http.Request, filename string) 
 			xscale = (columns - 1) / (endpoints.xmax - endpoints.xmin)
 			yscale = (rows - 1) / (endpoints.ymax - endpoints.ymin)
 
-			for input.Scan() {
-				line := input.Text()
-				// Each line has 2 or 3 space-separated values, depending on if it is real or complex data:
-				// time real, or x y for euclidean data
-				// time real imaginary for complex data
-				values := strings.Split(line, " ")
-				var (
-					x, y, t float64
-					err     error
-				)
-				// real data
-				if len(values) == 2 {
-					if x, err = strconv.ParseFloat(values[0], 64); err != nil {
-						fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
-						continue
-					}
-
-					if y, err = strconv.ParseFloat(values[1], 64); err != nil {
-						fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
-						continue
-					}
-					// complex data
-				} else if len(values) == 3 {
-					if t, err = strconv.ParseFloat(values[0], 64); err != nil {
-						fmt.Printf("String %s conversion to float error: %v\n", values[0], err)
-						continue
-					}
-
-					if x, err = strconv.ParseFloat(values[1], 64); err != nil {
-						fmt.Printf("String %s conversion to float error: %v\n", values[1], err)
-						continue
-					}
-
-					if y, err = strconv.ParseFloat(values[2], 64); err != nil {
-						fmt.Printf("String %s conversion to float error: %v\n", values[2], err)
-						continue
-					}
-
-					// Calculate the modulus of the complex data becomes the y-axis
-					// The time becomes the x-axis
-					y = math.Sqrt(x*x + y*y)
-					x = t
-				}
-
-				// rotation
-				if rad != 0.0 {
-					xrot := x*math.Cos(rad) + y*math.Sin(rad)
-					yrot := -x*math.Sin(rad) + y*math.Cos(rad)
-					x = xrot
-					y = yrot
-				}
-
-				// Check if inside the zoom values
-				if x < endpoints.xmin || x > endpoints.xmax || y < endpoints.ymin || y > endpoints.ymax {
-					continue
-				}
-
-				// This cell location (row,col) is on the line
-				//row := (rows - 1) - int((y-endpoints.ymin)*yscale+.5)
-				row := int((endpoints.ymax-y)*yscale + .5)
-				col := int((x-endpoints.xmin)*xscale + .5)
-				plot.Grid[row*columns+col] = "online"
+			// Check for interpolation and fill in the grid with the data points
+			interp := r.FormValue("interpolate")
+			if interp == "interpolate" {
+				err = gridFillInterp(&plot, xscale, yscale, endpoints, rad, input)
+			} else {
+				err = gridFill(&plot, xscale, yscale, endpoints, rad, input)
 			}
+			if err != nil {
+				return err
+			}
+
 			// Set plot status if no errors
 			if len(plot.Status) == 0 {
 				plot.Status = fmt.Sprintf("Status: Data plotted from (%.3f,%.3f) to (%.3f,%.3f)",
@@ -366,7 +554,7 @@ func processTimeDomain(w http.ResponseWriter, r *http.Request, filename string) 
 	// Enter the filename in the form
 	plot.Filename = path.Base(filename)
 
-	// Write to HTTP using template and grid``
+	// Write to HTTP using template and grid
 	if err := timeTmpl.Execute(w, plot); err != nil {
 		log.Fatalf("Write to HTTP output using template with error: %v\n", err)
 	}
@@ -407,6 +595,7 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 	window["Welch"] = welch
 	window["Hamming"] = hamming
 	window["Hanning"] = hanning
+	window["Rectangle"] = rectangle
 
 	// Open file
 	f, err := os.Open(filename)
@@ -484,7 +673,8 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 			N = rows * rows
 		}
 		// This rounds up to nearest FFT size that is a power of 2
-		N = int(math.Exp2(math.Log2(float64(N) + .5)))
+		N = int(math.Exp2(float64(int(math.Log2(float64(N)) + .5))))
+		fmt.Printf("N=%v\n", N)
 
 		if N < 2*m {
 			fmt.Printf("FFT Size %d not greater than 2%d\n", N, 2*m)
@@ -813,125 +1003,396 @@ func handlePlotOptions(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleGenerating creates x-y data and saves to disk files
-func handleGenerating(w http.ResponseWriter, r *http.Request) {
-	const (
-		samples         = 800
-		cycles          = 4
-		k       float64 = cycles * math.Pi
-	)
+// processFigureData generates and saves to disk the desired figures
+func processFigureData(w http.ResponseWriter, r *http.Request, samples int, samplerate int) error {
 
 	// 1. sine wave
-	f, err := os.Create(path.Join(dataDir, "sin.txt"))
-	if err != nil {
-		log.Fatalf("Create %v error: %v", path.Join(dataDir, "sin.txt"), err)
-	}
+	if figure := r.FormValue("figuresine"); figure == "sine" {
+		f, err := os.Create(path.Join(dataDir, "sin.txt"))
+		if err != nil {
+			return fmt.Errorf("create %v error: %v", path.Join(dataDir, "sin.txt"), err)
+		}
 
-	xstart := -1.0
-	xend := 1.0
-	xincr := (xend - xstart) / float64(samples)
-	for x := xstart; x < xend; x += xincr {
-		fmt.Fprintf(f, "%v %v\n", x, math.Sin(k*x))
+		// Put the sinusoid at a low frequency so that is discernible when plotted in time domain
+		freq := float64(samplerate) / 1000.0
+		omega := 2.0 * math.Pi * freq
+		delta := 1.0 / float64(samplerate)
+		for t := 0.0; t < float64(samples)*delta; t += delta {
+			fmt.Fprintf(f, "%v %v\n", t, math.Sin(omega*t))
+		}
+		f.Close()
 	}
-	fmt.Fprintf(w, "Wrote %v samples to %v\n", samples, path.Join(dataDir, "sin.txt"))
-	f.Close()
 
 	// 2. circle
-	f, err = os.Create(path.Join(dataDir, "circle.txt"))
-	if err != nil {
-		log.Fatalf("Create %v error: %v", path.Join(dataDir, "circle.txt"), err)
+	if figure := r.FormValue("figurecircle"); figure == "circle" {
+		f, err := os.Create(path.Join(dataDir, "circle.txt"))
+		if err != nil {
+			return fmt.Errorf("create %v error: %v", path.Join(dataDir, "circle.txt"), err)
+		}
+		// radius
+		rad := 8.0
+		incr := 2.0 * rad / float64(samples)
+		x := -rad
+		var y float64
+		for i := 0; i < samples; i++ {
+			y = math.Sqrt(rad*rad - x*x)
+			fmt.Fprintf(f, "%v %v\n", x, y)
+			fmt.Fprintf(f, "%v %v\n", x, -y)
+			x += incr
+		}
+		f.Close()
 	}
-	// radius
-	rad := 8.0
-	incr := 2.0 * rad / samples
-	x := -rad
-	var y float64
-	for i := 0; i < samples; i++ {
-		y = math.Sqrt(rad*rad - x*x)
-		fmt.Fprintf(f, "%v %v\n", x, y)
-		fmt.Fprintf(f, "%v %v\n", x, -y)
-		x += incr
-	}
-	fmt.Fprintf(w, "Wrote %v samples to %v\n", samples, path.Join(dataDir, "circle.txt"))
-	f.Close()
 
 	// 3. decaying sawtooth
-	f, err = os.Create(path.Join(dataDir, "sawtooth.txt"))
-	if err != nil {
-		log.Fatalf("Create %v error: %v", path.Join(dataDir, "sawtooth.txt"), err)
-	}
-	y = 100.0
-	x = 25.0
-	xincr = 1.5
-	yincr := 3.0 * xincr
-	for c := 0; c < cycles; c++ {
-		samplesPerCycle := samples / cycles
-		for n := 0; n < samplesPerCycle; n++ {
-			fmt.Fprintf(f, "%v %v\n", x, y)
-			// reverse y direction
-			if n == samplesPerCycle/2 {
-				yincr = -yincr
-			}
-			x += xincr
-			y += yincr
+	if figure := r.FormValue("figuresawtooth"); figure == "sawtooth" {
+		cycles := 4
+		f, err := os.Create(path.Join(dataDir, "sawtooth.txt"))
+		if err != nil {
+			return fmt.Errorf("create %v error: %v", path.Join(dataDir, "sawtooth.txt"), err)
 		}
-		// decay and reverse direction
-		yincr *= -.8
+		y := 100.0
+		x := 25.0
+		xincr := 1.5
+		yincr := 3.0 * xincr
+		for c := 0; c < cycles; c++ {
+			samplesPerCycle := samples / cycles
+			for n := 0; n < samplesPerCycle; n++ {
+				fmt.Fprintf(f, "%v %v\n", x, y)
+				// reverse y direction
+				if n == samplesPerCycle/2 {
+					yincr = -yincr
+				}
+				x += xincr
+				y += yincr
+			}
+			// decay and reverse direction
+			yincr *= -.8
+		}
+		f.Close()
 	}
-	fmt.Fprintf(w, "Wrote %v samples to %v\n", samples, path.Join(dataDir, "sawtooth.txt"))
-	f.Close()
 
-	// 4. Random data
-	f, err = os.Create(path.Join(dataDir, "random.txt"))
+	// 4. Spiral
+	if figure := r.FormValue("figurespiral"); figure == "spiral" {
+		cycles := 4
+		f, err := os.Create(path.Join(dataDir, "spiral.txt"))
+		if err != nil {
+			return fmt.Errorf("create %v error: %v", path.Join(dataDir, "spiral.txt"), err)
+		}
+
+		rad := 0.0
+		ang := 0.0
+		radIncr := .1
+		angIncr := 2.0 * math.Pi / (float64(samples) / 2.0)
+		for s := 0; s < cycles*samples; s++ {
+			x := rad * math.Cos(ang)
+			y := rad * math.Sin(ang)
+			fmt.Fprintf(f, "%v %v\n", x, y)
+			rad += radIncr
+			ang += angIncr
+		}
+		f.Close()
+	}
+
+	// 5. Cardoid r = K(1-cos(ang)), where K is a positive constant
+	if figure := r.FormValue("figurecardoid"); figure == "cardoid" {
+		f, err := os.Create(path.Join(dataDir, "cardoid.txt"))
+		if err != nil {
+			return fmt.Errorf("create %v error: %v", path.Join(dataDir, "cardoid.txt"), err)
+		}
+
+		const K = 13.0
+		angIncr := 2.0 * math.Pi / float64(samples)
+		for ang := 0.0; ang < 2*math.Pi; ang += angIncr {
+			r := K * (1.0 - math.Cos(ang))
+			x := r * math.Cos(ang)
+			y := r * math.Sin(ang)
+			fmt.Fprintf(f, "%v %v\n", x, y)
+		}
+		f.Close()
+	}
+
+	return nil
+}
+
+// generateSinsuoids creates a sum of sine waves in Gaussian noise at SNR
+func generateSinsuoids(w http.ResponseWriter, r *http.Request, samples int, samplerate int) error {
+	// get snr
+	temp := r.FormValue("SSsnr")
+	if len(temp) == 0 {
+		return fmt.Errorf("missing SNR for Sum of Sinsuoids")
+	}
+	snr, err := strconv.Atoi(temp)
 	if err != nil {
-		log.Fatalf("Create %v error: %v", path.Join(dataDir, "random.txt"), err)
+		return err
 	}
-	rand.Seed(time.Now().Unix())
-	m := 1000.0
-	for i := 0; i < samples; i++ {
-		x := m * rand.Float64()
-		y := m * rand.Float64()
-		fmt.Fprintf(f, "%v %v\n", x, y)
-	}
-	fmt.Fprintf(w, "Wrote %v samples to %v\n", samples, path.Join(dataDir, "random.txt"))
-	f.Close()
 
-	// 5. Spiral
-	f, err = os.Create(path.Join(dataDir, "spiral.txt"))
+	type Sine struct {
+		freq int
+		amp  int
+	}
+
+	var (
+		maxampl  int      = 0 // maximum sine amplitude
+		noiseSD  float64      // noise standard deviation
+		freqName []string = []string{"SSfreq1", "SSfreq2",
+			"SSfreq3", "SSfreq4", "SSfreq5"}
+		ampName []string = []string{"SSamp1", "SSamp2", "SSamp3",
+			"SSamp4", "SSamp5"}
+		signal []Sine = make([]Sine, 0) // sines to generate
+	)
+
+	// get the sine frequencies and amplitudes, 1 to 5 possible
+	for i, name := range freqName {
+		a := r.FormValue(ampName[i])
+		f := r.FormValue(name)
+		if len(a) > 0 && len(f) > 0 {
+			freq, err := strconv.Atoi(f)
+			if err != nil {
+				return err
+			}
+			amp, err := strconv.Atoi(a)
+			if err != nil {
+				return err
+			}
+			signal = append(signal, Sine{freq: freq, amp: amp})
+			if amp > maxampl {
+				maxampl = amp
+			}
+		}
+	}
+	// Require at least one sine to create
+	if len(signal) == 0 {
+		return fmt.Errorf("enter frequency and amplitude of 1 to 5 sinsuoids")
+	}
+
+	// Calculate the noise standard deviation using the SNR and maxampl
+	ratio := math.Pow(10.0, float64(snr)/10.0)
+	noiseSD = math.Sqrt(0.5 * float64(maxampl) * float64(maxampl) / ratio)
+	file, err := os.Create(path.Join(dataDir, "sinsum.txt"))
 	if err != nil {
-		log.Fatalf("Create %v error: %v", path.Join(dataDir, "spiral.txt"), err)
+		return fmt.Errorf("create %v error: %v", path.Join(dataDir, "sinsum.txt"), err)
+	}
+	defer file.Close()
+
+	// Sum the sinsuoids and noise over the time interval
+	delta := 1.0 / float64(samplerate)
+	twoPi := 2.0 * math.Pi
+	for t := 0.0; t < float64(samples)*delta; t += delta {
+		sinesum := 0.0
+		for _, sig := range signal {
+			omega := twoPi * float64(sig.freq)
+			sinesum += float64(sig.amp) * math.Sin(omega*t)
+		}
+		sinesum += noiseSD * rand.NormFloat64()
+		fmt.Fprintf(file, "%v %v\n", t, sinesum)
 	}
 
-	rad = 0.0
-	ang := 0.0
-	radIncr := .1
-	angIncr := 2.0 * math.Pi / (samples / 2.0)
-	for s := 0; s < cycles*samples; s++ {
-		x := rad * math.Cos(ang)
-		y := rad * math.Sin(ang)
-		fmt.Fprintf(f, "%v %v\n", x, y)
-		rad += radIncr
-		ang += angIncr
-	}
-	fmt.Fprintf(w, "Wrote %v samples to %v\n", cycles*samples, path.Join(dataDir, "spiral.txt"))
-	f.Close()
+	return nil
+}
 
-	// 6. Cardoid r = K(1-cos(ang)), where K is a positive constant
-	f, err = os.Create(path.Join(dataDir, "cardoid.txt"))
+// generateAM creates an amplitude modulation waveform
+func generateAM(w http.ResponseWriter, r *http.Request, samples int, samplerate int) error {
+	// get modulation percent
+	temp := r.FormValue("percentmodulation")
+	if len(temp) == 0 {
+		return fmt.Errorf("missing Modulation Percent for AM")
+	}
+	percentModulation, err := strconv.Atoi(temp)
 	if err != nil {
-		log.Fatalf("Create %v error: %v", path.Join(dataDir, "cardoid.txt"), err)
+		return err
 	}
 
-	const K = 13.0
-	angIncr = 2.0 * math.Pi / samples
-	for ang := 0.0; ang < 2*math.Pi; ang += angIncr {
-		r := K * (1.0 - math.Cos(ang))
-		x := r * math.Cos(ang)
-		y := r * math.Sin(ang)
-		fmt.Fprintf(f, "%v %v\n", x, y)
+	// get carrier frequency
+	temp = r.FormValue("carrierfreq")
+	if len(temp) == 0 {
+		return fmt.Errorf("missing Carrier Frequency  for AM")
 	}
-	fmt.Fprintf(w, "Wrote %v samples to %v\n", samples, path.Join(dataDir, "cardoid.txt"))
-	f.Close()
+	f1, err := strconv.Atoi(temp)
+	if err != nil {
+		return err
+	}
+
+	// get modulating frequency
+	temp = r.FormValue("modulfreq")
+	if len(temp) == 0 {
+		return fmt.Errorf("missing Modulating Frequency for AM")
+	}
+	f2, err := strconv.Atoi(temp)
+	if err != nil {
+		return err
+	}
+
+	// alias check
+	if f1-f2 < 0 {
+		return fmt.Errorf("aliasing:  carrier frequency - modulating frequency < 0")
+	}
+	if f1+f2 > samplerate/2 {
+		return fmt.Errorf("aliasing:  carrier frequency + modulating frequency > samplerate/2")
+	}
+
+	file, err := os.Create(path.Join(dataDir, "am.txt"))
+	if err != nil {
+		return fmt.Errorf("create %v error: %v", path.Join(dataDir, "am.txt"), err)
+	}
+	defer file.Close()
+
+	// Create the AM waveform using sin(2*PI*f1*t)*(1 + A*cos(2*PI*f2*t))
+	// where f1 is the carrier frequency, f2 is the modulating frequency,
+	// and A is the percent modulation/100
+	delta := 1.0 / float64(samplerate)
+	const twoPi = 2.0 * math.Pi
+	A := float64(percentModulation) / 100.0
+	for t := 0.0; t < float64(samples)*delta; t += delta {
+		y1 := math.Sin(twoPi * float64(f1) * t)
+		y2 := 1.0 + A*math.Cos(twoPi*float64(f2)*t)
+		fmt.Fprintf(file, "%v %v\n", t, y1*y2)
+	}
+
+	return nil
+}
+
+// generateFM creates a linear frequency modulation waveform
+func generateFM(w http.ResponseWriter, r *http.Request, samples int, samplerate int) error {
+	// get bandwidth
+	temp := r.FormValue("FMbandwidth")
+	if len(temp) == 0 {
+		return fmt.Errorf("missing Bandwidth  for FM")
+	}
+	bw, err := strconv.Atoi(temp)
+	if err != nil {
+		return err
+	}
+
+	// get center frequency
+	temp = r.FormValue("FMfrequency")
+	if len(temp) == 0 {
+		return fmt.Errorf("missing Center Frequency for FM")
+	}
+	fc, err := strconv.Atoi(temp)
+	if err != nil {
+		return err
+	}
+
+	// check for aliasing
+	if fc-bw/2 < 0 {
+		return fmt.Errorf("aliasing:  fc-bw/2 < 0")
+	}
+	if fc+bw/2 > samplerate/2 {
+		return fmt.Errorf("aliasing: fc+bw/2 > samplerate/2")
+	}
+
+	file, err := os.Create(path.Join(dataDir, "fm.txt"))
+	if err != nil {
+		return fmt.Errorf("create %v error: %v", path.Join(dataDir, "fm.txt"), err)
+	}
+	defer file.Close()
+
+	// Create the FM waveform using A*cos(2*PI*(fc-bw/2)*t + PI*(bw/tau)*t*t)
+	// where fc is the center frequency, bw is the bandwidth, tau is the pulse
+	// duration in seconds
+	delta := 1.0 / float64(samplerate)
+	tau := delta * float64(samples)
+	const (
+		pi    = math.Pi
+		twoPi = 2.0 * pi
+	)
+	A := 1.0
+	for t := 0.0; t < tau; t += delta {
+		ang := twoPi*(float64(fc)-float64(bw)/2.0)*t + pi*(float64(bw)/tau)*t*t
+		fmt.Fprintf(file, "%v %v\n", t, A*math.Cos(ang))
+	}
+
+	return nil
+}
+
+// processSignalData generates and saves to disk the desired signal
+func processSignalData(w http.ResponseWriter, r *http.Request, samples int, samplerate int) error {
+
+	// Determine which signal to generate
+	switch r.FormValue("signaltype") {
+	case "sumsinusoids":
+		err := generateSinsuoids(w, r, samples, samplerate)
+		if err != nil {
+			return err
+		}
+	case "am":
+		err := generateAM(w, r, samples, samplerate)
+		if err != nil {
+			return err
+		}
+	case "fm":
+		err := generateFM(w, r, samples, samplerate)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// handleGenerateData creates figure or signal data and saves to disk
+func handleGenerateData(w http.ResponseWriter, r *http.Request) {
+	var plot PlotT
+
+	samplestxt := r.FormValue("samples")
+	sampleratetxt := r.FormValue("samplerate")
+	// choose time or frequency domain processing
+	if len(samplestxt) > 0 && len(sampleratetxt) > 0 {
+
+		samples, err := strconv.Atoi(samplestxt)
+		if err != nil {
+			plot.Status = fmt.Sprintf("Samples conversion to int error: %v", err.Error())
+			fmt.Printf("Samples conversion to int error: %v", err.Error())
+			// Write to HTTP using template and grid
+			if err := generateTmpl.Execute(w, plot); err != nil {
+				log.Fatalf("Write to HTTP output using template with error: %v\n", err)
+			}
+			return
+		}
+
+		samplerate, err := strconv.Atoi(sampleratetxt)
+		if err != nil {
+			plot.Status = fmt.Sprintf("Sample rate conversion to int error: %v", err.Error())
+			fmt.Printf("Sample rate conversion to int error: %v", err.Error())
+			// Write to HTTP using template and grid
+			if err := generateTmpl.Execute(w, plot); err != nil {
+				log.Fatalf("Write to HTTP output using template with error: %v\n", err)
+			}
+			return
+		}
+
+		// Get the category of data to generate
+		switch r.FormValue("category") {
+		case "figure":
+			err := processFigureData(w, r, samples, samplerate)
+			if err != nil {
+				plot.Status = err.Error()
+				if err := generateTmpl.Execute(w, plot); err != nil {
+					log.Fatalf("Write to HTTP output using template with error: %v\n", err)
+				}
+			}
+		case "signal":
+			err := processSignalData(w, r, samples, samplerate)
+			if err != nil {
+				plot.Status = err.Error()
+				if err := generateTmpl.Execute(w, plot); err != nil {
+					log.Fatalf("Write to HTTP output using template with error: %v\n", err)
+				}
+			}
+		}
+		plot.Status = "Figures or Signals files written to the data folder"
+		// Write to HTTP using template and grid
+		if err := generateTmpl.Execute(w, plot); err != nil {
+			log.Fatalf("Write to HTTP output using template with error: %v\n", err)
+		}
+
+	} else {
+		plot.Status = "Enter number of samples and sample rate"
+		// Write to HTTP using template and grid
+		if err := generateTmpl.Execute(w, plot); err != nil {
+			log.Fatalf("Write to HTTP output using template with error: %v\n", err)
+		}
+	}
 }
 
 // executive program
@@ -940,8 +1401,8 @@ func main() {
 	// and plotting time or frequency domain data
 	http.HandleFunc(patternPlotData, handlePlotData)
 
-	// Setup http server with handler for generating data for testing
-	http.HandleFunc(patternGenerator, handleGenerating)
+	// Setup http server with handler for generating data
+	http.HandleFunc(patternGenerateData, handleGenerateData)
 
 	// Setup http server with handler for choosing data file and either time or frequency domain plot
 	http.HandleFunc(patternPlotOptions, handlePlotOptions)
