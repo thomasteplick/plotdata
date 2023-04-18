@@ -79,8 +79,8 @@
 						<p>Enter the signal you wish to generate:
 							<ul>
 								<li>Sum of Sinusoids with Gaussian noise at a specified SNR</li>
-								<li>Amplitude Modulation (AM) waveform consisting of a sin wave with a cosine amplitude envelope</li>
-								<li>Linear Frequency Modulation (LFM) waveform</li>
+								<li>Amplitude Modulation (AM) waveform consisting of a sine wave with a cosine amplitude envelope</li>
+								<li>Frequency Modulation:  linear (LFM) or sine baseband</li>
 							</ul>
 						</p>
 						<input type="radio" name="signaltype" value="sumsinusoids" id="sumsinusoids" checked />
@@ -136,12 +136,23 @@
 								<input type="number" id="modulfreq" name="modulfreq" min="1" />
 							</div>
 							<div class="signaltype">
-								<h4>Linear Frequency Modulation</h4>
-								<label for="FMbandwidth">Bandwidth (Hz):</label>
-								<input type="number" id="FMbandwidth" name="FMbandwidth" min="1" />
+								<h4>Frequency Modulation</h4>
+								<input type="radio" name="FMtype" value="linear" id="FMlinear" checked />
+								<label for="FMlinear">Linear</label>
+								<input type="radio" name="FMtype" value="sine" id="FMsine" />
+								<label for="FMsine">Sine</label>
 								<br />
 								<label for="FMfrequency">Center Frequency (Hz):</label>
 								<input type="number" id="FMfrequency" name="FMfrequency" min="1" />
+								<hr />
+								<label for="FMbandwidth">Linear Bandwidth (Hz):</label>
+								<input type="number" id="FMbandwidth" name="FMbandwidth" min="1" />
+								<hr />
+								<label for="FMfreqdev">Frequency Deviation (Hz):</label>
+								<input type="number" id="FMfreqdev" name="FMfreqdev" min="1" />
+								<br />
+								<label for="FMmodfreq">Modulating Frequency (Hz):</label>
+								<input type="number" id="FMmodfreq" name="FMmodfreq" min="1" />
 							</div>
 						</div>
 					</div>

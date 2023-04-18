@@ -269,7 +269,7 @@ func gridFillInterp(plot *PlotT, xscale float64, yscale float64, endpoints Endpo
 		err          error
 	)
 
-	const lessen = 8
+	const lessen = 10
 
 	// Get first sample
 	input.Scan()
@@ -1251,57 +1251,132 @@ func generateAM(w http.ResponseWriter, r *http.Request, samples int, samplerate 
 	return nil
 }
 
-// generateFM creates a linear frequency modulation waveform
+// generateFM creates a frequency modulation waveform, either sine baseband or linear (LFM)
 func generateFM(w http.ResponseWriter, r *http.Request, samples int, samplerate int) error {
-	// get bandwidth
-	temp := r.FormValue("FMbandwidth")
-	if len(temp) == 0 {
-		return fmt.Errorf("missing Bandwidth  for FM")
-	}
-	bw, err := strconv.Atoi(temp)
-	if err != nil {
-		return err
+
+	generateLFM := func() error {
+		// get bandwidth
+		temp := r.FormValue("FMbandwidth")
+		if len(temp) == 0 {
+			return fmt.Errorf("missing Bandwidth  for FM linear")
+		}
+		bw, err := strconv.Atoi(temp)
+		if err != nil {
+			return err
+		}
+
+		// get center frequency
+		temp = r.FormValue("FMfrequency")
+		if len(temp) == 0 {
+			return fmt.Errorf("missing Center Frequency for FM linear")
+		}
+		fc, err := strconv.Atoi(temp)
+		if err != nil {
+			return err
+		}
+
+		// check for aliasing
+		if fc-bw/2 < 0 {
+			return fmt.Errorf("aliasing:  fc-bw/2 < 0")
+		}
+		if fc+bw/2 > samplerate/2 {
+			return fmt.Errorf("aliasing: fc+bw/2 > samplerate/2")
+		}
+
+		file, err := os.Create(path.Join(dataDir, "fm.txt"))
+		if err != nil {
+			return fmt.Errorf("create %v error: %v", path.Join(dataDir, "fm.txt"), err)
+		}
+		defer file.Close()
+
+		// Create the FM waveform using A*cos(2*PI*(fc-bw/2)*t + PI*(bw/tau)*t*t)
+		// where fc is the center frequency, bw is the bandwidth, tau is the pulse
+		// duration in seconds
+		delta := 1.0 / float64(samplerate)
+		tau := delta * float64(samples)
+		const (
+			pi    = math.Pi
+			twoPi = 2.0 * pi
+		)
+		A := 1.0
+		for t := 0.0; t < tau; t += delta {
+			ang := twoPi*(float64(fc)-float64(bw)/2.0)*t + pi*(float64(bw)/tau)*t*t
+			fmt.Fprintf(file, "%v %v\n", t, A*math.Cos(ang))
+		}
+		return nil
 	}
 
-	// get center frequency
-	temp = r.FormValue("FMfrequency")
-	if len(temp) == 0 {
-		return fmt.Errorf("missing Center Frequency for FM")
-	}
-	fc, err := strconv.Atoi(temp)
-	if err != nil {
-		return err
+	generateSineFM := func() error {
+		// get center frequency
+		temp := r.FormValue("FMfrequency")
+		if len(temp) == 0 {
+			return fmt.Errorf("missing Center Frequency for FM sine")
+		}
+		fc, err := strconv.Atoi(temp)
+		if err != nil {
+			return err
+		}
+
+		// get frequency deviation
+		temp = r.FormValue("FMfreqdev")
+		if len(temp) == 0 {
+			return fmt.Errorf("missing frequency deviation for FM sine")
+		}
+		fd, err := strconv.Atoi(temp)
+		if err != nil {
+			return err
+		}
+
+		// get modulating frequency
+		temp = r.FormValue("FMmodfreq")
+		if len(temp) == 0 {
+			return fmt.Errorf("missing modulating frequency for FM sine")
+		}
+		fm, err := strconv.Atoi(temp)
+		if err != nil {
+			return err
+		}
+
+		// check for aliasing
+		if fc-fd < 0 {
+			return fmt.Errorf("aliasing:  fc-bw/2 < 0")
+		}
+		if fc+fd > samplerate/2 {
+			return fmt.Errorf("aliasing: fc+bw/2 > samplerate/2")
+		}
+
+		file, err := os.Create(path.Join(dataDir, "fm.txt"))
+		if err != nil {
+			return fmt.Errorf("create %v error: %v", path.Join(dataDir, "fm.txt"), err)
+		}
+		defer file.Close()
+
+		// Create the FM waveform using A*cos(2*PI*fc*t + (fd/fm)*sin(2*PI*fm*t))
+		// where fc is the center frequency, fd is the frequency deviation, fm is
+		// the modulating frequency.
+		delta := 1.0 / float64(samplerate)
+		tau := delta * float64(samples)
+		const (
+			twoPi = 2.0 * math.Pi
+		)
+		A := 1.0
+		for t := 0.0; t < tau; t += delta {
+			y := A * math.Cos(twoPi*float64(fc)*t+
+				float64(fd)/float64(fm)*math.Sin(twoPi*float64(fm)*t))
+			fmt.Fprintf(file, "%v %v\n", t, y)
+		}
+
+		return nil
 	}
 
-	// check for aliasing
-	if fc-bw/2 < 0 {
-		return fmt.Errorf("aliasing:  fc-bw/2 < 0")
+	// Determine if Sine baseband or linear (LFM) and create it
+	temp := r.FormValue("FMtype")
+	switch temp {
+	case "linear":
+		return generateLFM()
+	case "sine":
+		return generateSineFM()
 	}
-	if fc+bw/2 > samplerate/2 {
-		return fmt.Errorf("aliasing: fc+bw/2 > samplerate/2")
-	}
-
-	file, err := os.Create(path.Join(dataDir, "fm.txt"))
-	if err != nil {
-		return fmt.Errorf("create %v error: %v", path.Join(dataDir, "fm.txt"), err)
-	}
-	defer file.Close()
-
-	// Create the FM waveform using A*cos(2*PI*(fc-bw/2)*t + PI*(bw/tau)*t*t)
-	// where fc is the center frequency, bw is the bandwidth, tau is the pulse
-	// duration in seconds
-	delta := 1.0 / float64(samplerate)
-	tau := delta * float64(samples)
-	const (
-		pi    = math.Pi
-		twoPi = 2.0 * pi
-	)
-	A := 1.0
-	for t := 0.0; t < tau; t += delta {
-		ang := twoPi*(float64(fc)-float64(bw)/2.0)*t + pi*(float64(bw)/tau)*t*t
-		fmt.Fprintf(file, "%v %v\n", t, A*math.Cos(ang))
-	}
-
 	return nil
 }
 
@@ -1370,6 +1445,7 @@ func handleGenerateData(w http.ResponseWriter, r *http.Request) {
 				if err := generateTmpl.Execute(w, plot); err != nil {
 					log.Fatalf("Write to HTTP output using template with error: %v\n", err)
 				}
+				return
 			}
 		case "signal":
 			err := processSignalData(w, r, samples, samplerate)
@@ -1378,6 +1454,7 @@ func handleGenerateData(w http.ResponseWriter, r *http.Request) {
 				if err := generateTmpl.Execute(w, plot); err != nil {
 					log.Fatalf("Write to HTTP output using template with error: %v\n", err)
 				}
+				return
 			}
 		}
 		plot.Status = "Figures or Signals files written to the data folder"
