@@ -33,21 +33,30 @@ Create figures or signal waveforms and plot the data in the time or frequency do
 
 <h3>Five Sinsouoids in Gaussian Noise with 20 db SNR
  
- ![image](https://user-images.githubusercontent.com/117768679/233195762-c28a07c0-93ae-41cf-964d-40b4b8120e50.png)
+![image](https://user-images.githubusercontent.com/117768679/233195762-c28a07c0-93ae-41cf-964d-40b4b8120e50.png)
 
- <h3>Five Sinsuoids in Gaussian Noise with 20 db SNR
+<h3>Five Sinsuoids in Gaussian Noise with 20 db SNR
   
- ![image](https://user-images.githubusercontent.com/117768679/233196675-4dcaeb7d-d5fc-430e-8f54-91faf8924fe8.png)
+![image](https://user-images.githubusercontent.com/117768679/233196675-4dcaeb7d-d5fc-430e-8f54-91faf8924fe8.png)
 
- <h3>Linear Frequency Modulation, 1000 Hz center frequency, 400 Hz bandwidth
+<h3>Linear Frequency Modulation, 1000 Hz center frequency, 400 Hz bandwidth
    
- ![image](https://user-images.githubusercontent.com/117768679/233197696-cc9bab1b-9686-43c0-a905-f27bae158520.png)
+![image](https://user-images.githubusercontent.com/117768679/233197696-cc9bab1b-9686-43c0-a905-f27bae158520.png)
    
- <h3>Linear Frequency Modulation, 1000 Hz center frequency, 400 Hz bandwidth
+<h3>Linear Frequency Modulation, 1000 Hz center frequency, 400 Hz bandwidth
     
- ![image](https://user-images.githubusercontent.com/117768679/233197945-965151f3-adff-42d3-a678-92329be6ba2e.png)
+![image](https://user-images.githubusercontent.com/117768679/233197945-965151f3-adff-42d3-a678-92329be6ba2e.png)
  
- <h3>AM waveform, Center Frequency 1000 Hz, Modulating Frequency 200 Hz
+<h3>AM waveform, Center Frequency 1000 Hz, Modulating Frequency 200 Hz
      
- ![image](https://user-images.githubusercontent.com/117768679/233198873-b8bf860b-5c57-45c0-b0ca-7c89ab6c2a57.png)
+![image](https://user-images.githubusercontent.com/117768679/233198873-b8bf860b-5c57-45c0-b0ca-7c89ab6c2a57.png)
 
+<h3>FM with Sine Wave Baseband Modulating Frequency, Peak Deviation 200 Hz, Modulating Frequency 20 Hz
+ 
+![image](https://user-images.githubusercontent.com/117768679/233199977-f9904cbf-afaf-4fdf-8038-ab70437daf93.png)
+ 
+<h3>FM with Sine Wave Baseband Modulating Frequency, Peak Deviation 200 Hz, Modulating Frequency 20 Hz
+  
+![image](https://user-images.githubusercontent.com/117768679/233200592-3da18358-94ab-46e2-bda3-658232986828.png)
+
+  
