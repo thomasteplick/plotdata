@@ -15,6 +15,8 @@ Create figures or signal waveforms and plot the data in the time or frequency do
  </ul>
 
 <h3>Generate Data Page</h3>
+
 ![image](https://user-images.githubusercontent.com/117768679/233181558-f3e2e0de-7356-4791-afa8-4c3dda775345.png)
 <h3>Plot Data Page</h3>
+
 ![image](https://user-images.githubusercontent.com/117768679/233182057-4b6cba6b-9ed1-45c6-9a0d-a2aab2f9c8e6.png)
