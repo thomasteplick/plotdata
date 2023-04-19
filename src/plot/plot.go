@@ -1285,7 +1285,7 @@ func generateFM(w http.ResponseWriter, r *http.Request, samples int, samplerate 
 
 		file, err := os.Create(path.Join(dataDir, "fm.txt"))
 		if err != nil {
-			return fmt.Errorf("create %v error: %v", path.Join(dataDir, "fm.txt"), err)
+			return fmt.Errorf("create %v error: %v", path.Join(dataDir, "fmlinear.txt"), err)
 		}
 		defer file.Close()
 
@@ -1347,7 +1347,7 @@ func generateFM(w http.ResponseWriter, r *http.Request, samples int, samplerate 
 
 		file, err := os.Create(path.Join(dataDir, "fm.txt"))
 		if err != nil {
-			return fmt.Errorf("create %v error: %v", path.Join(dataDir, "fm.txt"), err)
+			return fmt.Errorf("create %v error: %v", path.Join(dataDir, "fmsine.txt"), err)
 		}
 		defer file.Close()
 
