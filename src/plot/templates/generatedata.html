@@ -31,6 +31,22 @@
 				margin: 10px;
 			}
 
+			#percentmodulationlabel, #carrierfreqlabel, #ammodulfreqlabel {
+				font-size: 12px;
+				font-family: Arial, Helvetica, sans-serif;
+				width: 150px;
+				text-align: right;
+				float: left;
+			}
+
+			#centerfreqlabel, #linearbandwidthlabel, #freqdeviationlabel, #fmmodulfreqlabel {
+				font-size: 12px;
+				font-family: Arial, Helvetica, sans-serif;
+				width: 150px;
+				text-align: right;
+				float: left;
+			}
+
 		</style>
 	</head>
 	<body>
@@ -126,13 +142,13 @@
 							</div>
 							<div class="signaltype" >
 								<h4>Amplitude Modulation (DSB)</h4>
-								<label for="percentmodulation">Modulation Percent:</label>
+								<label for="percentmodulation" id="percentmodulationlabel">Modulation Percent:</label>
 								<input type="number" id="percentmodulation" name="percentmodulation" min="0" max="100" />
 								<br />
-								<label for="carrierfreq">Carrier Frequency (Hz):</label>
+								<label for="carrierfreq" id="carrierfreqlabel">Carrier Frequency (Hz):</label>
 								<input type="number" id="carrierfreq" name="carrierfreq" min="1" />
 								<br />
-								<label for="modulfreq">Modulating Frequency (Hz):</label>
+								<label for="modulfreq" id="ammodulfreqlabel">Modulating Frequency (Hz):</label>
 								<input type="number" id="modulfreq" name="modulfreq" min="1" />
 							</div>
 							<div class="signaltype">
@@ -142,16 +158,16 @@
 								<input type="radio" name="FMtype" value="sine" id="FMsine" />
 								<label for="FMsine">Sine</label>
 								<br />
-								<label for="FMfrequency">Center Frequency (Hz):</label>
+								<label for="FMfrequency" id="centerfreqlabel">Center Frequency (Hz):</label>
 								<input type="number" id="FMfrequency" name="FMfrequency" min="1" />
 								<hr />
-								<label for="FMbandwidth">Linear Bandwidth (Hz):</label>
+								<label for="FMbandwidth" id="linearbandwidthlabel">Linear Bandwidth (Hz):</label>
 								<input type="number" id="FMbandwidth" name="FMbandwidth" min="1" />
 								<hr />
-								<label for="FMfreqdev">Frequency Deviation (Hz):</label>
+								<label for="FMfreqdev" id="freqdeviationlabel">Frequency Deviation (Hz):</label>
 								<input type="number" id="FMfreqdev" name="FMfreqdev" min="1" />
 								<br />
-								<label for="FMmodfreq">Modulating Frequency (Hz):</label>
+								<label for="FMmodfreq" id="fmmodulfreqlabel">Modulating Frequency (Hz):</label>
 								<input type="number" id="FMmodfreq" name="FMmodfreq" min="1" />
 							</div>
 						</div>
