@@ -8,7 +8,8 @@ Create figures or signal waveforms and plot the data in the time or frequency do
  windowed to reduce spectral leakage at a cost of reduced resolution because of the wider window main lobe.  The user can select the FFT size, number of 
  overlapped segments, log or linear plot, and window type.  The figures that can be created are a sine, circle, cardoid and spiral.  The signals that 
  can be created are:
- 1.  one to five sinsuoids in Gaussian noise at a specified signal-to-noise ratio (SNR)
- 2.  amplitude modulated (AM) waveform with desired center frequency and bandwidth
- 3.  frequency modulated (FM) waveform using linear frequency modulation (LFM) or baseband sine at desired center frequency, bandwidth, or modulating frequency
- 
+ <ul>
+ <li>one to five sinsuoids in Gaussian noise at a specified signal-to-noise ratio (SNR)</li>
+ <li>amplitude modulated (AM) waveform with desired center frequency and bandwidth</li>
+ <li>frequency modulated (FM) waveform using linear frequency modulation (LFM) or baseband sine at desired center frequency, bandwidth, or modulating frequency</li>
+ </ul>
