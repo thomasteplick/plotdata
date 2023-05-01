@@ -609,6 +609,11 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 			}
 		}
 		fmt.Printf("Data file %s has %d samples\n", filename, nn)
+		// make even number of samples so if segments = 1, we won't 
+		// do the last FFT with one sample 
+		if nn % 2 == 1 {
+		    nn++
+		}
 
 		f.Close()
 
