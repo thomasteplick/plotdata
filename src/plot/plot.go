@@ -913,9 +913,13 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 	// Apply the  sampling rate in Hz to the x-axis using a scale factor
 	// Convert the fft size to sampling rate/2, the Nyquist critical frequency
 	sf := 0.5 * samplingRate / endpoints.xmax
-
+	
 	// Construct x-axis labels
 	incr := (endpoints.xmax - endpoints.xmin) / (xlabels - 1)
+	format := "%.0f"
+	if incr*sf < 1.0 {
+		format = "%.2f"
+	}
 	x := endpoints.xmin
 	// First label is empty for alignment purposes
 	for i := range plot.Xlabel {
