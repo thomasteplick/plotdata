@@ -269,8 +269,6 @@ func gridFillInterp(plot *PlotT, xscale float64, yscale float64, endpoints Endpo
 		err          error
 	)
 
-	const lessen = 10
-
 	// Get first sample
 	input.Scan()
 	line := input.Text()
@@ -334,8 +332,12 @@ func gridFillInterp(plot *PlotT, xscale float64, yscale float64, endpoints Endpo
 	}
 
 	// Scale factor to determine the number of interpolation points
-	lenEP := math.Sqrt((endpoints.xmax-endpoints.xmin)*(endpoints.xmax-endpoints.xmin) +
-		(endpoints.ymax-endpoints.ymin)*(endpoints.ymax-endpoints.ymin))
+	/*
+		lenEP := math.Sqrt((endpoints.xmax-endpoints.xmin)*(endpoints.xmax-endpoints.xmin) +
+			(endpoints.ymax-endpoints.ymin)*(endpoints.ymax-endpoints.ymin))
+	*/
+	lenEPx := endpoints.xmax - endpoints.xmin
+	lenEPy := endpoints.ymax - endpoints.ymin
 
 	// Continue with the rest of the points in the file
 	for input.Scan() {
@@ -402,8 +404,18 @@ func gridFillInterp(plot *PlotT, xscale float64, yscale float64, endpoints Endpo
 
 		// Interpolate the points between previous point and current point
 
-		lenEdge := math.Sqrt((x-prevX)*(x-prevX) + (y-prevY)*(y-prevY))
-		ncells := int(columns*lenEdge/lenEP) / lessen // number of points to interpolate
+		/* lenEdge := math.Sqrt((x-prevX)*(x-prevX) + (y-prevY)*(y-prevY)) */
+		/* ncells := int(columns*lenEdge/lenEP) / lessen // number of points to interpolate */
+		lenEdgeX := math.Abs((x - prevX))
+		lenEdgeY := math.Abs(y - prevY)
+		ncellsX := int(columns * lenEdgeX / lenEPx) // number of points to interpolate in x-dim
+		ncellsY := int(rows * lenEdgeY / lenEPy)    // number of points to interpolate in y-dim
+		// Choose the biggest
+		ncells := ncellsX
+		if ncellsY > ncells {
+			ncells = ncellsY
+		}
+
 		stepX := (x - prevX) / float64(ncells)
 		stepY := (y - prevY) / float64(ncells)
 
@@ -609,10 +621,10 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 			}
 		}
 		fmt.Printf("Data file %s has %d samples\n", filename, nn)
-		// make even number of samples so if segments = 1, we won't 
-		// do the last FFT with one sample 
-		if nn % 2 == 1 {
-		    nn++
+		// make even number of samples so if segments = 1, we won't
+		// do the last FFT with one sample
+		if nn%2 == 1 {
+			nn++
 		}
 
 		f.Close()
@@ -918,7 +930,7 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 	// Apply the  sampling rate in Hz to the x-axis using a scale factor
 	// Convert the fft size to sampling rate/2, the Nyquist critical frequency
 	sf := 0.5 * samplingRate / endpoints.xmax
-	
+
 	// Construct x-axis labels
 	incr := (endpoints.xmax - endpoints.xmin) / (xlabels - 1)
 	format := "%.0f"
@@ -928,7 +940,7 @@ func processFrequencyDomain(w http.ResponseWriter, r *http.Request, filename str
 	x := endpoints.xmin
 	// First label is empty for alignment purposes
 	for i := range plot.Xlabel {
-		plot.Xlabel[i] = fmt.Sprintf("%.0f", x*sf)
+		plot.Xlabel[i] = fmt.Sprintf(format, x*sf)
 		x += incr
 	}
 
@@ -1040,14 +1052,20 @@ func processFigureData(w http.ResponseWriter, r *http.Request, samples int, samp
 		}
 		// radius
 		rad := 8.0
-		incr := 2.0 * rad / float64(samples)
+		incr := 4.0 * rad / float64(samples)
 		x := -rad
 		var y float64
-		for i := 0; i < samples; i++ {
+		for i := 0; i < samples/2; i++ {
 			y = math.Sqrt(rad*rad - x*x)
 			fmt.Fprintf(f, "%v %v\n", x, y)
-			fmt.Fprintf(f, "%v %v\n", x, -y)
+			//fmt.Fprintf(f, "%v %v\n", x, -y)
 			x += incr
+		}
+		for i := 0; i < samples/2; i++ {
+			y = math.Sqrt(rad*rad - x*x)
+			//fmt.Fprintf(f, "%v %v\n", x, y)
+			fmt.Fprintf(f, "%v %v\n", x, -y)
+			x -= incr
 		}
 		f.Close()
 	}
